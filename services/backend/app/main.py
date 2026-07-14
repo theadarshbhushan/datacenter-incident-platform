@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -47,12 +47,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API routers
-app.include_router(auth_router)
-app.include_router(servers_router)
-app.include_router(metrics_router)
-app.include_router(incidents_router)
-app.include_router(predictions_router)
+# Register API routers under /api/v1 prefix
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(auth_router)
+api_router.include_router(servers_router)
+api_router.include_router(metrics_router)
+api_router.include_router(incidents_router)
+api_router.include_router(predictions_router)
+
+app.include_router(api_router)
 
 @app.get("/health", tags=["Health"])
 async def health_check():

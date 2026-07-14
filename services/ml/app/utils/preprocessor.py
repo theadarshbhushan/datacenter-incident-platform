@@ -197,11 +197,18 @@ def generate_synthetic_metrics(n_samples: int = 2000, seed: int = 42) -> list[di
     temp = 55 + 10 * np.sin(t + 2) + rng.normal(0, 3, n_samples)
     disk_used = 45 + 10 * np.sin(t / 4) + rng.normal(0, 2, n_samples)
 
-    # Inject anomaly spikes in ~5 % of data
-    spike_mask = rng.random(n_samples) > 0.95
-    cpu[spike_mask] = rng.uniform(88, 100, spike_mask.sum())
-    ram[spike_mask] = rng.uniform(88, 100, spike_mask.sum())
-    temp[spike_mask] = rng.uniform(83, 95, spike_mask.sum())
+    # Inject independent anomaly spikes to represent all 6 class labels
+    cpu_spike = rng.random(n_samples) > 0.97
+    ram_spike = rng.random(n_samples) > 0.97
+    temp_spike = rng.random(n_samples) > 0.97
+    disk_spike = rng.random(n_samples) > 0.97
+    net_spike = rng.random(n_samples) > 0.97
+
+    cpu[cpu_spike] = rng.uniform(88, 100, cpu_spike.sum())
+    ram[ram_spike] = rng.uniform(88, 100, ram_spike.sum())
+    temp[temp_spike] = rng.uniform(83, 95, temp_spike.sum())
+    disk_io[disk_spike] = rng.uniform(480, 600, disk_spike.sum())
+    net[net_spike] = rng.uniform(950, 1200, net_spike.sum())
 
     # Clip to valid ranges
     cpu = np.clip(cpu, 0, 100)
