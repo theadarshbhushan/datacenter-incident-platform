@@ -9,7 +9,11 @@ Maps metric feature vectors to one of six incident categories:
 import os
 import numpy as np
 import joblib
-import mlflow
+try:
+    import mlflow
+except ImportError:
+    mlflow = None
+import shap
 from xgboost import XGBClassifier
 from loguru import logger
 
@@ -19,6 +23,17 @@ MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "saved_models")
 MODEL_PATH = os.path.join(MODEL_DIR, "xgboost_classifier.joblib")
 
 NUM_CLASSES = len(INCIDENT_TYPES)
+INCIDENT_TYPE_TO_IDX = {t: i for i, t in enumerate(INCIDENT_TYPES)}
+
+FEATURE_NAMES = [
+    "cpu_pct",
+    "ram_pct",
+    "disk_io_mbps",
+    "net_mbps",
+    "temp_celsius",
+    "cpu_trend",
+    "ram_trend",
+]
 
 
 class IncidentClassifier:
@@ -121,6 +136,179 @@ class IncidentClassifier:
         return {
             "incident_type": incident_type,
             "confidence": round(confidence, 4),
+        }
+
+    # ── Explainability (SHAP) ────────────────────────────────────────────
+    def explain(self, metrics: dict) -> dict:
+        """
+        Compute XGBoost prediction and SHAP feature attributions for the given metrics.
+
+        Parameters
+        ----------
+        metrics : dict
+            Dictionary containing metric values (cpu_pct, ram_pct, temp_celsius, etc.).
+
+        Returns
+        -------
+        dict with keys:
+            incident_type : str
+            confidence    : float
+            top_features  : list of dicts with feature, value, shap_value, explanation
+            summary       : str
+        """
+        if not self._is_trained or self.model is None:
+            raise RuntimeError("Model has not been trained yet")
+
+        # Prepare 7-element feature vector matching model schema
+        cpu = float(metrics.get("cpu_pct", 0.0))
+        ram = float(metrics.get("ram_pct", 0.0))
+        disk = float(metrics.get("disk_io_mbps", 0.0))
+        net = float(metrics.get("net_mbps", 0.0))
+        temp = float(metrics.get("temp_celsius", 0.0))
+        cpu_trend = float(metrics.get("cpu_trend", 0.0))
+        ram_trend = float(metrics.get("ram_trend", 0.0))
+
+        X = np.array([[cpu, ram, disk, net, temp, cpu_trend, ram_trend]], dtype=np.float32)
+
+        # 1. Prediction using unchanged predict()
+        pred_res = self.predict(X)
+        incident_type = pred_res["incident_type"]
+        confidence = pred_res["confidence"]
+        predicted_idx = INCIDENT_TYPE_TO_IDX.get(incident_type, 5)
+
+        # 2. Compute SHAP values using shap.TreeExplainer(self.model)
+        explainer = shap.TreeExplainer(self.model)
+        shap_values = explainer.shap_values(X)
+
+        # Extract 1D array of SHAP values for the predicted class
+        if isinstance(shap_values, list):
+            if predicted_idx < len(shap_values):
+                class_shap = np.array(shap_values[predicted_idx]).flatten()
+            else:
+                class_shap = np.array(shap_values[0]).flatten()
+        elif isinstance(shap_values, np.ndarray):
+            if shap_values.ndim == 3:
+                if shap_values.shape[2] == NUM_CLASSES:
+                    class_shap = shap_values[0, :, predicted_idx]
+                elif shap_values.shape[1] == NUM_CLASSES:
+                    class_shap = shap_values[0, predicted_idx, :]
+                else:
+                    class_shap = shap_values[0, :, 0]
+            elif shap_values.ndim == 2:
+                class_shap = shap_values[0]
+            else:
+                class_shap = shap_values.flatten()
+        else:
+            class_shap = np.array(shap_values).flatten()
+
+        # Build feature contributions list
+        feature_contributions = []
+        for idx, feat_name in enumerate(FEATURE_NAMES):
+            feat_val = float(X[0, idx])
+            shap_val = float(class_shap[idx]) if idx < len(class_shap) else 0.0
+            feature_contributions.append({
+                "feature": feat_name,
+                "value": feat_val,
+                "shap_value": round(shap_val, 4),
+            })
+
+        # Sort features by highest positive impact on the predicted class
+        sorted_features = sorted(
+            feature_contributions,
+            key=lambda item: (item["shap_value"], abs(item["shap_value"])),
+            reverse=True,
+        )
+
+        positive_items = [f for f in sorted_features if f["shap_value"] > 0]
+        top_items = positive_items[:3] if positive_items else sorted_features[:3]
+
+        top_features = []
+        for item in top_items:
+            feat = item["feature"]
+            val = item["value"]
+            sv = item["shap_value"]
+            v_int = int(round(val))
+
+            if feat == "cpu_pct":
+                label = f"CPU at {v_int}%"
+            elif feat == "ram_pct":
+                label = f"RAM at {v_int}%"
+            elif feat == "temp_celsius":
+                label = f"Temperature at {v_int}°C"
+            elif feat == "disk_io_mbps":
+                label = f"Disk I/O at {v_int} MB/s"
+            elif feat == "net_mbps":
+                label = f"Network traffic at {v_int} MB/s"
+            elif feat == "cpu_trend":
+                sign = "+" if val >= 0 else ""
+                label = f"CPU trend ({sign}{val:.1f}%)"
+            elif feat == "ram_trend":
+                sign = "+" if val >= 0 else ""
+                label = f"RAM trend ({sign}{val:.1f}%)"
+            else:
+                label = f"{feat} at {val}"
+
+            verb = "strongly driving" if (sv >= 0.5 or item == top_items[0]) else "contributing to"
+            explanation = f"{label} is {verb} {incident_type} prediction"
+
+            top_features.append({
+                "feature": feat,
+                "value": val,
+                "shap_value": sv,
+                "explanation": explanation,
+            })
+
+        # Generate one-sentence summary
+        def _phrase(feat: str, val: float, is_first: bool = False) -> str:
+            v_int = int(round(val))
+            if feat == "cpu_pct":
+                prefix = "High" if is_first else "high"
+                return f"{prefix} CPU ({v_int}%)"
+            elif feat == "ram_pct":
+                prefix = "High" if is_first else "high"
+                return f"{prefix} RAM ({v_int}%)"
+            elif feat == "temp_celsius":
+                prefix = "Elevated" if is_first else "elevated"
+                return f"{prefix} temperature ({v_int}°C)"
+            elif feat == "disk_io_mbps":
+                prefix = "High" if is_first else "high"
+                return f"{prefix} disk I/O ({v_int} MB/s)"
+            elif feat == "net_mbps":
+                prefix = "High" if is_first else "high"
+                return f"{prefix} network throughput ({v_int} MB/s)"
+            elif feat == "cpu_trend":
+                prefix = "Rising" if is_first else "rising"
+                sign = "+" if val >= 0 else ""
+                return f"{prefix} CPU trend ({sign}{val:.1f}%)"
+            elif feat == "ram_trend":
+                prefix = "Rising" if is_first else "rising"
+                sign = "+" if val >= 0 else ""
+                return f"{prefix} RAM trend ({sign}{val:.1f}%)"
+            return f"{feat} ({v_int})"
+
+        # Pick the most meaningful top features for the summary
+        meaningful_feats = [
+            f for f in top_features
+            if not (f["feature"] in ("cpu_trend", "ram_trend") and abs(f["value"]) < 0.1)
+        ]
+        if not meaningful_feats:
+            meaningful_feats = top_features
+
+        if len(meaningful_feats) >= 2:
+            p1 = _phrase(meaningful_feats[0]["feature"], meaningful_feats[0]["value"], is_first=True)
+            p2 = _phrase(meaningful_feats[1]["feature"], meaningful_feats[1]["value"], is_first=False)
+            summary = f"{p1} and {p2} indicate a likely {incident_type} incident"
+        elif len(meaningful_feats) == 1:
+            p1 = _phrase(meaningful_feats[0]["feature"], meaningful_feats[0]["value"], is_first=True)
+            summary = f"{p1} indicates a likely {incident_type} incident"
+        else:
+            summary = f"Telemetry metrics indicate a likely {incident_type} incident"
+
+        return {
+            "incident_type": incident_type,
+            "confidence": confidence,
+            "top_features": top_features,
+            "summary": summary,
         }
 
     # ── Persistence helpers ──────────────────────────────────────────────

@@ -1,13 +1,15 @@
 """
 Feature engineering utilities for the ML service.
-
-Transforms raw metric dictionaries into the numeric formats
-required by Isolation Forest, XGBoost, and the LSTM forecaster.
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 from loguru import logger
 
 # ── Column ordering used everywhere ──────────────────────────────────────────
