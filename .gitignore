@@ -7,3 +7,17 @@ node_modules/
 dist/ 
 build/ 
 *.log 
+
+dc-ml/datasets/azure/*.gz
+
+dc-ml/datasets/azure/*.csv.gz
+
+dc-ml/datasets/nab/
+
+dc-ml/datasets/google/
+
+dc-ml/datasets/processed/
+
+dc-ml/saved_models/*.pt
+
+dc-ml/saved_models/*.pkl
