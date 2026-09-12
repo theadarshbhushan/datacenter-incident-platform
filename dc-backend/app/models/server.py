@@ -1,21 +1,27 @@
-from datetime import datetime, timezone
-from beanie import Document
+from datetime import datetime
+from typing import Dict, List, Any
+from beanie import Document, Indexed
 from pydantic import Field
 
+
 class Server(Document):
-    name: str
-    hostname: str = Field(unique=True)
+    server_id: Indexed(str, unique=True)
+    hostname: str
     ip_address: str
-    status: str = "active"  # active, maintenance, offline, anomalous
-    cpu_cores: int
-    ram_gb: int
-    disk_gb: int
-    location: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    datacenter: str = "us-east-1"
+    rack: str = "Rack-A"
+    hardware_type: str = "compute"  # compute / storage / gpu / network
+    status: str = "healthy"  # healthy / degraded / critical / offline
+    thresholds: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "cpu_pct": 85.0,
+            "ram_pct": 85.0,
+            "temp_celsius": 80.0,
+            "disk_used_pct": 90.0,
+        }
+    )
+    tags: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
         name = "servers"
-        indexes = [
-            "hostname",
-            "status",
-        ]

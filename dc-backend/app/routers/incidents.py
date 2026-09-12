@@ -1,136 +1,277 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from datetime import datetime, timezone
-from app.models.incident import Incident, IncidentSeverity, IncidentType
-from app.schemas.incident import IncidentCreate, IncidentUpdate, IncidentOut
-from app.routers.auth import get_current_user
-from app.models.user import User
-from app.websocket.manager import get_websocket_manager
-from beanie import PydanticObjectId
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from loguru import logger
+import uuid
+
+from app.models.incident import Incident
 from app.models.server import Server
+from app.websocket.manager import ws_manager
+from app.schemas.response import success_response
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
-def to_incident_out(i: Incident) -> IncidentOut:
-    return IncidentOut(
-        id=str(i.id),
-        server_id=i.server_id,
-        detected_at=i.detected_at,
-        resolved_at=i.resolved_at,
-        severity=i.severity,
-        incident_type=i.incident_type,
-        anomaly_score=i.anomaly_score,
-        model_used=i.model_used,
-        acknowledged=i.acknowledged,
-        notes=i.notes
+
+class CreateIncidentRequest(BaseModel):
+    server_id: str
+    hostname: Optional[str] = None
+    severity: str = "critical"  # critical / high / medium / low
+    incident_type: str = "cpu_spike"
+    anomaly_score: float = 0.88
+    model_used: Optional[str] = "XGBoost + TreeExplainer"
+    shap_explanation: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = ""
+
+
+class ResolveIncidentRequest(BaseModel):
+    notes: Optional[str] = "Resolved by SRE operator"
+
+
+DEFAULT_INCIDENTS = [
+    {
+        "incident_id": "INC-1082",
+        "server_id": "server-03",
+        "hostname": "srv-app-alpha",
+        "detected_at": datetime.utcnow(),
+        "resolved_at": None,
+        "severity": "critical",
+        "incident_type": "cpu_spike",
+        "anomaly_score": 0.94,
+        "model_used": "XGBoost + TreeExplainer",
+        "shap_explanation": {
+            "top_features": [
+                {"feature": "cpu_pct", "value": 94.2, "shap_value": 0.45, "explanation": "CPU utilization at 94.2% strongly drives cpu_spike classification"},
+                {"feature": "temp_celsius", "value": 82.0, "shap_value": 0.32, "explanation": "Core temperature elevated (+0.32 SHAP)"},
+                {"feature": "ram_pct", "value": 88.0, "shap_value": 0.18, "explanation": "Memory saturation pressure (+0.18 SHAP)"}
+            ]
+        },
+        "acknowledged": False,
+        "notes": "Sudden computational surge on alpha gateway node.",
+        "status": "open",
+    },
+    {
+        "incident_id": "INC-1081",
+        "server_id": "server-07",
+        "hostname": "srv-kafka-02",
+        "detected_at": datetime.utcnow(),
+        "resolved_at": None,
+        "severity": "high",
+        "incident_type": "memory_leak",
+        "anomaly_score": 0.88,
+        "model_used": "Isolation Forest",
+        "shap_explanation": None,
+        "acknowledged": True,
+        "notes": "Monotonic heap memory climb detected on Kafka broker.",
+        "status": "acknowledged",
+    },
+    {
+        "incident_id": "INC-1080",
+        "server_id": "server-08",
+        "hostname": "srv-ml-inference",
+        "detected_at": datetime.utcnow(),
+        "resolved_at": datetime.utcnow(),
+        "severity": "medium",
+        "incident_type": "thermal_event",
+        "anomaly_score": 0.65,
+        "model_used": "Bi-LSTM Attention Forecaster",
+        "shap_explanation": None,
+        "acknowledged": True,
+        "notes": "Post-training GPU die cool-down cycle verified.",
+        "status": "resolved",
+    },
+]
+
+
+async def ensure_seed_incidents():
+    count = await Incident.count()
+    if count == 0:
+        logger.info("Seeding initial VaultWatch incidents...")
+        for inc_data in DEFAULT_INCIDENTS:
+            inc = Incident(**inc_data)
+            await inc.insert()
+
+
+@router.get("")
+async def get_incidents(
+    severity: Optional[str] = Query(None, description="Filter: critical/high/medium/low"),
+    status: Optional[str] = Query(None, description="Filter: open/acknowledged/resolved"),
+    server_id: Optional[str] = Query(None, description="Filter by server ID"),
+    limit: int = Query(50, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+):
+    await ensure_seed_incidents()
+
+    query = {}
+    if severity:
+        query["severity"] = severity
+    if status:
+        query["status"] = status
+    if server_id:
+        query["server_id"] = server_id
+
+    total = await Incident.find(query).count()
+    incidents = await Incident.find(query).sort(-Incident.detected_at).skip(skip).limit(limit).to_list()
+
+    # Format output for frontend compatibility (both `id` and `incident_id`)
+    formatted = []
+    for inc in incidents:
+        d = inc.dict()
+        d["id"] = inc.incident_id
+        d["created_at"] = inc.created_at.isoformat()
+        d["detected_at"] = inc.detected_at.isoformat()
+        d["resolved_at"] = inc.resolved_at.isoformat() if inc.resolved_at else None
+        formatted.append(d)
+
+    return success_response(
+        data={
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "incidents": formatted,
+        },
+        message=f"Retrieved {len(formatted)} incidents",
     )
 
-@router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
-async def create_incident(payload: IncidentCreate, current_user: User = Depends(get_current_user)):
-    server = await Server.find_one(Server.hostname == payload.server_id)
-    if not server and PydanticObjectId.is_valid(payload.server_id):
-        server = await Server.get(PydanticObjectId(payload.server_id))
-    resolved_server_id = server.hostname if server else payload.server_id
-    
-    incident = Incident(
-        server_id=resolved_server_id,
+
+@router.get("/stats/summary")
+async def get_incident_stats():
+    await ensure_seed_incidents()
+
+    total = await Incident.count()
+    critical = await Incident.find(Incident.severity == "critical").count()
+    high = await Incident.find(Incident.severity == "high").count()
+    medium = await Incident.find(Incident.severity == "medium").count()
+    low = await Incident.find(Incident.severity == "low").count()
+
+    active = await Incident.find(Incident.status != "resolved").count()
+    resolved = await Incident.find(Incident.status == "resolved").count()
+
+    # By type
+    all_incidents = await Incident.find_all().to_list()
+    by_type: Dict[str, int] = {}
+    for i in all_incidents:
+        by_type[i.incident_type] = by_type.get(i.incident_type, 0) + 1
+
+    return success_response(
+        data={
+            "total": total,
+            "active_count": active,
+            "resolved_today": resolved,
+            "by_severity": {
+                "critical": critical,
+                "high": high,
+                "medium": medium,
+                "low": low,
+            },
+            "by_type": by_type,
+        },
+        message="Incident statistics summary generated",
+    )
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_incident(payload: CreateIncidentRequest):
+    # Auto-generate incident ID
+    inc_code = f"INC-{uuid.uuid4().hex[:4].upper()}"
+
+    hostname = payload.hostname
+    if not hostname:
+        server = await Server.find_one(Server.server_id == payload.server_id)
+        hostname = server.hostname if server else payload.server_id
+
+    inc = Incident(
+        incident_id=inc_code,
+        server_id=payload.server_id,
+        hostname=hostname,
+        detected_at=datetime.utcnow(),
         severity=payload.severity,
         incident_type=payload.incident_type,
         anomaly_score=payload.anomaly_score,
-        model_used=payload.model_used,
-        notes=payload.notes
+        model_used=payload.model_used or "ensemble",
+        shap_explanation=payload.shap_explanation,
+        notes=payload.notes or "",
+        status="open",
     )
-    await incident.insert()
-    
-    # Update server status to anomalous if severity is high/critical
-    if server and payload.severity in [IncidentSeverity.HIGH, IncidentSeverity.CRITICAL]:
-        server.status = "anomalous"
-        await server.save()
-        
-    incident_out = to_incident_out(incident)
-    manager = get_websocket_manager()
-    await manager.broadcast({
-        "type": "incident",
-        "action": "create",
-        "data": incident_out.model_dump(mode="json")
+    await inc.insert()
+
+    # Update server status if critical/high
+    if inc.severity in ["critical", "high"]:
+        server = await Server.find_one(Server.server_id == payload.server_id)
+        if server:
+            await server.set({"status": "critical" if inc.severity == "critical" else "degraded"})
+
+    # Broadcast over WebSocket
+    inc_dict = inc.dict()
+    inc_dict["id"] = inc.incident_id
+    inc_dict["detected_at"] = inc.detected_at.isoformat()
+    await ws_manager.broadcast({"type": "incident", "action": "create", "data": inc_dict})
+
+    logger.info(f"Created incident {inc.incident_id} on {inc.server_id} [{inc.severity}]")
+    return success_response(data=inc_dict, message=f"Incident {inc.incident_id} created successfully")
+
+
+@router.get("/{incident_id}")
+async def get_incident(incident_id: str):
+    inc = await Incident.find_one(Incident.incident_id == incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found")
+
+    d = inc.dict()
+    d["id"] = inc.incident_id
+    d["detected_at"] = inc.detected_at.isoformat()
+    d["resolved_at"] = inc.resolved_at.isoformat() if inc.resolved_at else None
+    return success_response(data=d, message=f"Incident '{incident_id}' retrieved")
+
+
+@router.patch("/{incident_id}/acknowledge")
+async def acknowledge_incident(incident_id: str):
+    inc = await Incident.find_one(Incident.incident_id == incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found")
+
+    await inc.set({
+        "acknowledged": True,
+        "status": "acknowledged" if inc.status == "open" else inc.status,
     })
-    
-    return incident_out
 
-@router.get("", response_model=list[IncidentOut])
-async def list_incidents(
-    server_id: str | None = None,
-    severity: IncidentSeverity | None = None,
-    acknowledged: bool | None = None,
-    incident_type: IncidentType | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    filters = []
-    if server_id:
-        server = await Server.find_one(Server.hostname == server_id)
-        if not server and PydanticObjectId.is_valid(server_id):
-            server = await Server.get(PydanticObjectId(server_id))
-        resolved_server_id = server.hostname if server else server_id
-        filters.append(Incident.server_id == resolved_server_id)
-    if severity:
-        filters.append(Incident.severity == severity)
-    if acknowledged is not None:
-        filters.append(Incident.acknowledged == acknowledged)
-    if incident_type:
-        filters.append(Incident.incident_type == incident_type)
-        
-    if filters:
-        incidents = await Incident.find(*filters).sort("-detected_at").to_list()
-    else:
-        incidents = await Incident.find_all().sort("-detected_at").to_list()
-        
-    return [to_incident_out(i) for i in incidents]
+    inc_dict = inc.dict()
+    inc_dict["id"] = inc.incident_id
+    await ws_manager.broadcast({"type": "incident", "action": "update", "data": inc_dict})
 
-@router.get("/{incident_id}", response_model=IncidentOut)
-async def get_incident(incident_id: str, current_user: User = Depends(get_current_user)):
-    if not PydanticObjectId.is_valid(incident_id):
-        raise HTTPException(status_code=400, detail="Invalid incident ID format")
-    incident = await Incident.get(PydanticObjectId(incident_id))
-    if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    return to_incident_out(incident)
+    logger.info(f"Acknowledged incident {incident_id}")
+    return success_response(data=inc_dict, message=f"Incident '{incident_id}' acknowledged")
 
-@router.put("/{incident_id}", response_model=IncidentOut)
-async def update_incident(incident_id: str, payload: IncidentUpdate, current_user: User = Depends(get_current_user)):
-    if not PydanticObjectId.is_valid(incident_id):
-        raise HTTPException(status_code=400, detail="Invalid incident ID format")
-    incident = await Incident.get(PydanticObjectId(incident_id))
-    if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
-        
-    if payload.acknowledged is not None:
-        incident.acknowledged = payload.acknowledged
-    if payload.notes is not None:
-        incident.notes = payload.notes
-    if payload.resolved is not None:
-        if payload.resolved:
-            incident.resolved_at = datetime.now(timezone.utc)
-            # Re-evaluate server status if all incidents for this server are resolved
-            server = await Server.find_one(Server.hostname == incident.server_id)
-            if server:
-                active_incidents = await Incident.find(
-                    Incident.server_id == server.hostname,
-                    Incident.resolved_at == None
-                ).to_list()
-                remaining_active = [ai for ai in active_incidents if str(ai.id) != incident_id]
-                if not remaining_active:
-                    server.status = "active"
-                    await server.save()
-        else:
-            incident.resolved_at = None
-            
-    await incident.save()
-    incident_out = to_incident_out(incident)
-    
-    manager = get_websocket_manager()
-    await manager.broadcast({
-        "type": "incident",
-        "action": "update",
-        "data": incident_out.model_dump(mode="json")
+
+@router.patch("/{incident_id}/resolve")
+async def resolve_incident(incident_id: str, payload: ResolveIncidentRequest):
+    inc = await Incident.find_one(Incident.incident_id == incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found")
+
+    now = datetime.utcnow()
+    await inc.set({
+        "status": "resolved",
+        "resolved_at": now,
+        "notes": payload.notes or inc.notes,
     })
-    
-    return incident_out
+
+    # Reset server status to healthy if no other active incidents
+    remaining = await Incident.find(
+        Incident.server_id == inc.server_id,
+        Incident.status != "resolved",
+        Incident.incident_id != incident_id,
+    ).count()
+
+    if remaining == 0:
+        server = await Server.find_one(Server.server_id == inc.server_id)
+        if server:
+            await server.set({"status": "healthy"})
+
+    inc_dict = inc.dict()
+    inc_dict["id"] = inc.incident_id
+    inc_dict["resolved_at"] = now.isoformat()
+    await ws_manager.broadcast({"type": "incident", "action": "update", "data": inc_dict})
+
+    logger.info(f"Resolved incident {incident_id}")
+    return success_response(data=inc_dict, message=f"Incident '{incident_id}' resolved successfully")

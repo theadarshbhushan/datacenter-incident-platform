@@ -1,176 +1,168 @@
 import os
 import json
+import uuid
 import time
-import asyncio
-import threading
-from datetime import datetime, timezone
-
+from datetime import datetime
 from celery import Celery
-from celery.signals import worker_ready
+from pymongo import MongoClient
 import httpx
 from loguru import logger
-from motor.motor_asyncio import AsyncIOMotorClient
-from kafka import KafkaConsumer
+from app.core.config import settings
 
-# ── Environment Configuration ────────────────────────────────────────────────
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-MONGO_URI = os.getenv(
-    "MONGO_URI",
-    "mongodb://dcadmin:changeme_mongo_password@mongodb:27017/datacenter_incidents?authSource=admin",
+REDIS_URL = settings.get_redis_url
+MONGO_URI = settings.get_mongo_uri
+MONGO_DB_NAME = settings.MONGO_DB_NAME
+ML_SERVICE_URL = settings.get_ml_service_url
+KAFKA_BOOTSTRAP_SERVERS = settings.KAFKA_BOOTSTRAP_SERVERS
+KAFKA_METRICS_TOPIC = settings.KAFKA_METRICS_TOPIC
+
+celery_app = Celery("vaultwatch_worker", broker=REDIS_URL, backend=REDIS_URL)
+
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    task_acks_late=True,
 )
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "datacenter_incidents")
-ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://ml-service:8001")
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
-KAFKA_METRICS_TOPIC = os.getenv("KAFKA_METRICS_TOPIC", "server-metrics")
-
-# ── Celery App Instance ──────────────────────────────────────────────────────
-celery_app = Celery('dc_platform')
-celery_app.config_from_object({
-    'broker_url': os.getenv('REDIS_URL', 'redis://redis:6379/0'),
-    'result_backend': os.getenv('REDIS_URL', 'redis://redis:6379/0'),
-})
-
-# Alias for standard Celery CLI discovery
-app = celery_app
 
 
-# ── MongoDB & ML Processing Helper ──────────────────────────────────────────
-async def _async_process_metric(metric: dict):
-    client = AsyncIOMotorClient(MONGO_URI)
+def get_mongo_db():
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    return client[MONGO_DB_NAME]
+
+
+@celery_app.task(name="process_metric")
+def process_metric(metric_data: dict):
+    """
+    Processes incoming Kafka metric:
+    1. Saves metric to MongoDB
+    2. POST to ML service /anomaly/detect
+    3. If is_anomaly:
+       - Creates incident in MongoDB
+       - Creates alert in MongoDB
+    4. Updates server status based on severity
+    """
+    server_id = metric_data.get("server_id", "unknown")
+    now = datetime.utcnow()
+
     try:
-        db = client[MONGO_DB_NAME]
+        db = get_mongo_db()
 
         # 1. Save metric to MongoDB
-        metric_doc = dict(metric)
-        ts = metric_doc.get("timestamp")
-        if isinstance(ts, str):
-            try:
-                metric_doc["timestamp"] = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            except Exception:
-                metric_doc["timestamp"] = datetime.now(timezone.utc)
-        elif not isinstance(ts, datetime):
-            metric_doc["timestamp"] = datetime.now(timezone.utc)
-
-        await db.metrics.insert_one(metric_doc)
-        logger.debug(f"Saved metric to MongoDB for server '{metric.get('server_id')}'")
-
-        # 2. Call ML service via httpx POST to http://ml-service:8001/anomaly/detect
-        detect_url = f"{ML_SERVICE_URL}/anomaly/detect"
-        server_id = str(metric.get("server_id", "unknown"))
-
-        payload = {
+        metric_doc = {
             "server_id": server_id,
-            "metrics": [
-                {
-                    "cpu_pct": float(metric.get("cpu_pct", 0.0)),
-                    "ram_pct": float(metric.get("ram_pct", 0.0)),
-                    "disk_io_mbps": float(metric.get("disk_io_mbps", 0.0)),
-                    "net_mbps": float(metric.get("net_mbps", 0.0)),
-                    "temp_celsius": float(metric.get("temp_celsius", 0.0)),
-                    "disk_used_pct": float(metric.get("disk_used_pct", 0.0)),
-                    "timestamp": ts if isinstance(ts, str) else datetime.now(timezone.utc).isoformat(),
-                }
-            ],
+            "cpu_pct": float(metric_data.get("cpu_pct", 0.0)),
+            "ram_pct": float(metric_data.get("ram_pct", 0.0)),
+            "disk_io_mbps": float(metric_data.get("disk_io_mbps", 0.0)),
+            "net_mbps": float(metric_data.get("net_mbps", 0.0)),
+            "temp_celsius": float(metric_data.get("temp_celsius", 0.0)),
+            "disk_used_pct": float(metric_data.get("disk_used_pct", 0.0)),
+            "timestamp": now,
         }
+        db.metrics.insert_one(metric_doc)
 
-        async with httpx.AsyncClient(timeout=10.0) as http_client:
-            resp = await http_client.post(detect_url, json=payload)
-            if resp.status_code == 200:
-                resp_json = resp.json()
-                anomaly_data = resp_json.get("data", resp_json)
-                is_anomaly = bool(anomaly_data.get("is_anomaly", False))
-                anomaly_score = float(anomaly_data.get("anomaly_score", 0.0))
+        # 2. POST to ML service /anomaly/detect
+        is_anomaly = False
+        anomaly_score = 0.0
+        incident_type = "nominal"
+        shap_explanation = None
 
-                # 3. If is_anomaly is True, create incident in MongoDB incidents collection
-                if is_anomaly:
-                    severity = "medium"
-                    if anomaly_score > 0.8:
-                        severity = "critical"
-                    elif anomaly_score > 0.6:
-                        severity = "high"
-
-                    incident_doc = {
-                        "server_id": server_id,
-                        "detected_at": datetime.now(timezone.utc),
-                        "resolved_at": None,
-                        "severity": severity,
-                        "incident_type": anomaly_data.get("incident_type", "predicted_outage"),
-                        "anomaly_score": anomaly_score,
-                        "model_used": "isolation_forest",
-                        "acknowledged": False,
-                        "notes": f"Auto-detected anomaly via Celery consumer. Anomaly score: {anomaly_score:.4f}",
-                    }
-                    result = await db.incidents.insert_one(incident_doc)
-                    logger.warning(
-                        f"Anomaly detected! Created incident {result.inserted_id} for server '{server_id}' "
-                        f"(severity={severity}, score={anomaly_score:.4f})"
-                    )
-            else:
-                logger.warning(
-                    f"ML service /anomaly/detect returned status {resp.status_code}: {resp.text}"
-                )
-    except Exception as e:
-        logger.error(f"Error processing metric for server '{metric.get('server_id')}': {e}")
-        raise
-    finally:
-        client.close()
-
-
-# ── Celery Task ──────────────────────────────────────────────────────────────
-@celery_app.task(name="app.workers.consumer.process_metric")
-def process_metric(metric: dict):
-    """Celery task to process a metric received from Kafka."""
-    if isinstance(metric, str):
-        metric = json.loads(metric)
-    asyncio.run(_async_process_metric(metric))
-
-
-# ── Kafka Consumer Loop ──────────────────────────────────────────────────────
-def start_consumer(topic: str = KAFKA_METRICS_TOPIC):
-    """Kafka consumer loop that reads from topic and calls process_metric.delay()."""
-    servers = KAFKA_BOOTSTRAP_SERVERS.split(",")
-    logger.info(f"Starting Kafka consumer for topic '{topic}' on {servers}...")
-
-    consumer = None
-    for attempt in range(30):
         try:
-            consumer = KafkaConsumer(
-                topic,
-                bootstrap_servers=servers,
-                group_id="celery-metric-consumer-group",
-                auto_offset_reset="latest",
-                value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-                enable_auto_commit=True,
-            )
-            logger.info(f"Connected to Kafka topic '{topic}' successfully.")
-            break
+            with httpx.Client(timeout=4.0) as client:
+                res = client.post(f"{ML_SERVICE_URL}/anomaly/detect", json=metric_data)
+                if res.status_code == 200:
+                    ml_data = res.json()
+                    is_anomaly = ml_data.get("is_anomaly", False)
+                    anomaly_score = ml_data.get("anomaly_score", 0.0)
+                    incident_type = ml_data.get("incident_type", "cpu_spike")
+                    shap_explanation = ml_data.get("shap_explanation")
         except Exception as e:
-            logger.warning(f"Waiting for Kafka brokers (attempt {attempt + 1}/30): {e}")
-            time.sleep(3)
+            logger.warning(f"ML anomaly service check skipped or failed: {e}")
+            # Fallback threshold calculation
+            cpu = metric_doc["cpu_pct"]
+            temp = metric_doc["temp_celsius"]
+            if cpu > 85.0 or temp > 80.0:
+                is_anomaly = True
+                anomaly_score = round(min(0.98, (cpu / 100.0) * 0.6 + (temp / 100.0) * 0.4), 3)
+                incident_type = "cpu_spike"
 
-    if consumer is None:
-        logger.error("Failed to connect Kafka consumer after retries.")
+        # 3. If is_anomaly: create incident & alert
+        if is_anomaly:
+            inc_id = f"INC-{uuid.uuid4().hex[:4].upper()}"
+            severity = "critical" if anomaly_score > 0.85 else "high"
+
+            incident_doc = {
+                "incident_id": inc_id,
+                "server_id": server_id,
+                "hostname": metric_data.get("hostname", server_id),
+                "detected_at": now,
+                "resolved_at": None,
+                "severity": severity,
+                "incident_type": incident_type,
+                "anomaly_score": anomaly_score,
+                "model_used": "XGBoost + TreeExplainer",
+                "shap_explanation": shap_explanation,
+                "acknowledged": False,
+                "status": "open",
+                "notes": f"Automated anomaly detected: {incident_type} (score {anomaly_score})",
+                "created_at": now,
+            }
+            db.incidents.insert_one(incident_doc)
+
+            alert_doc = {
+                "server_id": server_id,
+                "incident_id": inc_id,
+                "severity": severity,
+                "message": f"Outage risk detected on {server_id}: {incident_type} (Score {anomaly_score})",
+                "anomaly_score": anomaly_score,
+                "recommendation": "Workload balancing & thermal throttle recommended.",
+                "acknowledged": False,
+                "created_at": now,
+            }
+            db.alerts.insert_one(alert_doc)
+
+            # 4. Update server status
+            db.servers.update_one(
+                {"server_id": server_id},
+                {"$set": {"status": severity}},
+            )
+            logger.warning(f"🚨 Incident {inc_id} logged on {server_id} [{severity}]")
+
+        return {"status": "success", "server_id": server_id, "is_anomaly": is_anomaly}
+
+    except Exception as err:
+        logger.error(f"Error in process_metric task: {err}")
+        return {"status": "error", "error": str(err)}
+
+
+def start_consumer():
+    """Kafka consumer loop that reads from server-metrics topic"""
+    try:
+        from kafka import KafkaConsumer
+    except ImportError:
+        logger.error("kafka-python-ng is not installed")
         return
 
-    try:
-        for message in consumer:
-            metric_data = message.value
-            logger.debug(f"Received metric from Kafka: {metric_data}")
-            process_metric.delay(metric_data)
-    except Exception as e:
-        logger.error(f"Error in Kafka consumer loop: {e}")
-    finally:
-        if consumer:
-            consumer.close()
+    logger.info(f"Connecting Kafka Consumer to {KAFKA_BOOTSTRAP_SERVERS} [Topic: {KAFKA_METRICS_TOPIC}]...")
 
-
-# ── Worker Lifecycle Hooks ───────────────────────────────────────────────────
-@worker_ready.connect
-def on_worker_ready(**kwargs):
-    """Launch Kafka consumer background thread when Celery worker is ready."""
-    logger.info("Celery worker ready. Launching Kafka consumer thread...")
-    t = threading.Thread(target=start_consumer, daemon=True, name="kafka-consumer-thread")
-    t.start()
+    while True:
+        try:
+            consumer = KafkaConsumer(
+                KAFKA_METRICS_TOPIC,
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS.split(","),
+                value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                auto_offset_reset="latest",
+                group_id="vaultwatch-metric-processors",
+            )
+            logger.info("Kafka consumer loop active.")
+            for message in consumer:
+                metric_data = message.value
+                process_metric.delay(metric_data)
+        except Exception as e:
+            logger.error(f"Kafka consumer connection error: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
 
 
 if __name__ == "__main__":

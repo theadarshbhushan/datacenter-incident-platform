@@ -1,16 +1,16 @@
-from beanie import Document
+from datetime import datetime
+from typing import Optional
+from beanie import Document, Indexed
 from pydantic import Field
 
+
 class User(Document):
-    username: str = Field(unique=True, min_length=3, max_length=50)
-    email: str = Field(unique=True)
+    email: Indexed(str, unique=True)
     hashed_password: str
-    role: str = "operator"  # operator, admin, analyst
+    full_name: str
+    role: str = "operator"
     is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
         name = "users"
-        indexes = [
-            "username",
-            "email",
-        ]

@@ -1,24 +1,22 @@
 from datetime import datetime
-from beanie import Document, Granularity, TimeSeriesConfig
-from pymongo import ASCENDING
+from beanie import Document, Indexed, TimeSeriesConfig, Granularity
+from pydantic import Field
+
 
 class Metric(Document):
-    timestamp: datetime
-    server_id: str
+    timestamp: Indexed(datetime) = Field(default_factory=datetime.utcnow)
+    server_id: Indexed(str)
     cpu_pct: float
     ram_pct: float
-    disk_io_mbps: float
-    net_mbps: float
-    temp_celsius: float
-    disk_used_pct: float
+    disk_io_mbps: float = 0.0
+    net_mbps: float = 0.0
+    temp_celsius: float = 0.0
+    disk_used_pct: float = 0.0
 
     class Settings:
         name = "metrics"
         timeseries = TimeSeriesConfig(
             time_field="timestamp",
             meta_field="server_id",
-            granularity=Granularity.seconds,
+            granularity="seconds",
         )
-        indexes = [
-            [("server_id", ASCENDING), ("timestamp", ASCENDING)],
-        ]
