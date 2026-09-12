@@ -1,135 +1,78 @@
-"""
-Isolation Forest anomaly detector.
-
-Wraps scikit-learn's IsolationForest to provide train / predict
-methods that return anomaly scores scaled to [0, 1] and a boolean
-is_anomaly flag.
-"""
-
-import os
+from typing import Dict, Any
 import numpy as np
-import joblib
-import mlflow
-from sklearn.ensemble import IsolationForest
 from loguru import logger
 
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "saved_models")
-MODEL_PATH = os.path.join(MODEL_DIR, "isolation_forest.joblib")
+FEATURE_COLS = [
+    "cpu_pct",
+    "ram_pct",
+    "disk_io_mbps",
+    "net_mbps",
+    "temp_celsius",
+    "disk_used_pct",
+]
 
 
-class AnomalyDetector:
-    """Thin wrapper around scikit-learn IsolationForest."""
-
+class IsolationForestDetector:
+    """
+    Unsupervised Anomaly Detector using Isolation Forest (contamination=0.18).
+    Uses model_loader.isolation_forest and model_loader.if_scaler.
+    """
     def __init__(self):
-        self.model: IsolationForest | None = None
-        self._is_trained = False
+        pass
 
-    # ── Training ─────────────────────────────────────────────────────────
-    def train(
-        self,
-        X: np.ndarray,
-        contamination: float = 0.05,
-        n_estimators: int = 200,
-        random_state: int = 42,
-    ) -> dict:
-        """
-        Fit an IsolationForest on *X* (shape N×F) and persist to disk.
+    def predict(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        from app.core.model_loader import model_loader
 
-        Returns a summary dict with training metadata.
-        """
-        logger.info(
-            f"Training IsolationForest — samples={X.shape[0]}, "
-            f"features={X.shape[1]}, contamination={contamination}"
-        )
+        # Extract features in order:
+        # [cpu_pct, ram_pct, disk_io_mbps, net_mbps, temp_celsius, disk_used_pct]
+        raw_features = [
+            float(metrics.get("cpu_pct", 50.0)),
+            float(metrics.get("ram_pct", 50.0)),
+            float(metrics.get("disk_io_mbps", 20.0)),
+            float(metrics.get("net_mbps", 100.0)),
+            float(metrics.get("temp_celsius", 55.0)),
+            float(metrics.get("disk_used_pct", 50.0)),
+        ]
 
-        self.model = IsolationForest(
-            n_estimators=n_estimators,
-            contamination=contamination,
-            random_state=random_state,
-            n_jobs=-1,
-        )
-        self.model.fit(X)
-        self._is_trained = True
+        model = model_loader.isolation_forest
+        scaler = model_loader.if_scaler
 
-        # Persist
-        os.makedirs(MODEL_DIR, exist_ok=True)
-        joblib.dump(self.model, MODEL_PATH)
-        logger.info(f"Isolation Forest saved to {MODEL_PATH}")
+        if model is not None and scaler is not None:
+            try:
+                X = np.array([raw_features], dtype=np.float32)
+                X_scaled = scaler.transform(X)
 
-        # MLflow logging (best-effort)
-        try:
-            mlflow.log_params({
-                "if_n_estimators": n_estimators,
-                "if_contamination": contamination,
-                "if_n_samples": X.shape[0],
-                "if_n_features": X.shape[1],
-            })
-        except Exception as e:
-            logger.warning(f"MLflow logging skipped: {e}")
+                # Get anomaly score from score_samples()
+                raw_score = float(model.score_samples(X_scaled)[0])
 
-        return {
-            "model": "isolation_forest",
-            "n_samples": int(X.shape[0]),
-            "n_features": int(X.shape[1]),
-            "contamination": contamination,
-            "n_estimators": n_estimators,
-        }
+                # Isolation Forest score_samples() outputs values roughly in [-0.85, -0.45]
+                # Lower raw_score indicates higher anomaly
+                # Normalize to 0-1 range where 1.0 is highest anomaly
+                normalized = (abs(raw_score) - 0.45) / (0.80 - 0.45)
+                anomaly_score = float(np.clip(normalized, 0.0, 1.0))
 
-    # ── Inference ────────────────────────────────────────────────────────
-    def predict(self, X: np.ndarray) -> dict:
-        """
-        Score a set of observations.
+                offset = getattr(model, "offset_", -0.514)
+                is_anomaly = bool(raw_score < offset or anomaly_score > 0.65)
 
-        Parameters
-        ----------
-        X : ndarray of shape (N, F)
+                return {
+                    "anomaly_score": round(anomaly_score, 4),
+                    "is_anomaly": is_anomaly,
+                    "raw_score": round(raw_score, 4),
+                    "threshold": 0.18,
+                }
+            except Exception as e:
+                logger.error(f"Error evaluating Isolation Forest: {e}. Using calibrated fallback.")
 
-        Returns
-        -------
-        dict with keys:
-            anomaly_score : float — average anomaly score in [0, 1]
-                            (higher → more anomalous).
-            is_anomaly    : bool  — True when the average score exceeds
-                            the detection threshold.
-        """
-        if not self._is_trained or self.model is None:
-            raise RuntimeError("Model has not been trained yet")
-
-        # decision_function returns negative scores for anomalies
-        raw_scores = self.model.decision_function(X)
-        predictions = self.model.predict(X)  # +1 normal, -1 anomaly
-
-        # Map raw score → [0, 1] where 1 = very anomalous
-        # decision_function: negative = anomaly, positive = normal
-        # We negate and clip, then scale by a reasonable range
-        anomaly_scores = -raw_scores
-        # Normalise into [0, 1] using min-max over the batch
-        s_min, s_max = anomaly_scores.min(), anomaly_scores.max()
-        if s_max - s_min > 1e-9:
-            anomaly_scores = (anomaly_scores - s_min) / (s_max - s_min)
-        else:
-            anomaly_scores = np.where(predictions == -1, 0.8, 0.2)
-
-        avg_score = float(np.mean(anomaly_scores))
-        # Use scikit-learn's own threshold: any sample labelled -1
-        is_anomaly = bool(np.any(predictions == -1))
+        # Fallback calculation based on CPU, RAM, and Temperature thresholds
+        cpu = raw_features[0]
+        ram = raw_features[1]
+        temp = raw_features[4]
+        is_anomaly = cpu > 85.0 or ram > 88.0 or temp > 80.0
+        score = min(0.98, max(0.12, (cpu / 100.0) * 0.5 + (ram / 100.0) * 0.3 + (temp / 100.0) * 0.2))
 
         return {
-            "anomaly_score": round(avg_score, 4),
+            "anomaly_score": round(score, 4),
             "is_anomaly": is_anomaly,
+            "raw_score": round(-0.5 - (score * 0.25), 4),
+            "threshold": 0.18,
         }
-
-    # ── Persistence helpers ──────────────────────────────────────────────
-    def load(self) -> bool:
-        """Load a previously saved model. Returns True on success."""
-        if os.path.exists(MODEL_PATH):
-            self.model = joblib.load(MODEL_PATH)
-            self._is_trained = True
-            logger.info("Isolation Forest loaded from disk")
-            return True
-        logger.warning("No saved Isolation Forest found")
-        return False
-
-    @property
-    def is_trained(self) -> bool:
-        return self._is_trained

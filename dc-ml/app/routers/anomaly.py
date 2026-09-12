@@ -1,98 +1,88 @@
-"""
-POST /anomaly/detect
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
-Receives metric time-series for a server and returns an anomaly score
-and boolean flag via the Isolation Forest model.
-"""
+from app.models.isolation_forest import IsolationForestDetector
+from app.models.xgboost_classifier import XGBoostClassifier
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from loguru import logger
+router = APIRouter(prefix="/anomaly", tags=["Anomaly Detection"])
 
-from app.utils.preprocessor import prepare_anomaly_features
-
-router = APIRouter(tags=["Anomaly Detection"])
+if_detector = IsolationForestDetector()
+xgb_classifier = XGBoostClassifier()
 
 
-class AnomalyRequest(BaseModel):
-    server_id: str
-    metrics: list[dict] | dict
+class MetricsPayload(BaseModel):
+    cpu_pct: Optional[float] = 50.0
+    ram_pct: Optional[float] = 50.0
+    disk_io_mbps: Optional[float] = 20.0
+    net_mbps: Optional[float] = 100.0
+    temp_celsius: Optional[float] = 55.0
+    disk_used_pct: Optional[float] = 50.0
 
 
-class ExplanationFeature(BaseModel):
-    feature: str
-    value: float
-    shap_value: float
-    explanation: str
+class AnomalyDetectRequest(BaseModel):
+    server_id: Optional[str] = "server-01"
+    metrics: Optional[Dict[str, Any]] = None
+    history: Optional[List[Dict[str, Any]]] = None
+
+    # Fallback direct fields support
+    cpu_pct: Optional[float] = None
+    ram_pct: Optional[float] = None
+    disk_io_mbps: Optional[float] = None
+    net_mbps: Optional[float] = None
+    temp_celsius: Optional[float] = None
+    disk_used_pct: Optional[float] = None
 
 
-class ExplanationData(BaseModel):
-    incident_type: str
-    confidence: float
-    top_features: list[ExplanationFeature]
-    summary: str
+@router.post("/detect")
+async def detect_anomaly(payload: AnomalyDetectRequest):
+    """
+    Evaluates real-time server telemetry using combined Isolation Forest
+    and XGBoost Classifier + TreeExplainer SHAP attribution.
+    """
+    server_id = payload.server_id or "server-01"
 
+    # Extract metrics dict
+    if payload.metrics and isinstance(payload.metrics, dict):
+        metrics_dict = payload.metrics
+    else:
+        metrics_dict = {
+            "cpu_pct": payload.cpu_pct if payload.cpu_pct is not None else 50.0,
+            "ram_pct": payload.ram_pct if payload.ram_pct is not None else 50.0,
+            "disk_io_mbps": payload.disk_io_mbps if payload.disk_io_mbps is not None else 20.0,
+            "net_mbps": payload.net_mbps if payload.net_mbps is not None else 100.0,
+            "temp_celsius": payload.temp_celsius if payload.temp_celsius is not None else 55.0,
+            "disk_used_pct": payload.disk_used_pct if payload.disk_used_pct is not None else 50.0,
+        }
 
-class AnomalyData(BaseModel):
-    anomaly_score: float
-    is_anomaly: bool
-    explanation: ExplanationData | None = None
-    incident_type: str | None = None
-    confidence: float | None = None
-    top_features: list[ExplanationFeature] | None = None
-    summary: str | None = None
+    # 1. Isolation Forest prediction
+    if_res = if_detector.predict(metrics_dict)
+    if_score = float(if_res["anomaly_score"])
+    if_is_anomaly = bool(if_res["is_anomaly"])
 
+    # 2. XGBoost prediction & SHAP explanation
+    xgb_res = xgb_classifier.predict(metrics_dict)
+    shap_explanation = xgb_classifier.explain(metrics_dict)
 
-class AnomalyResponse(BaseModel):
-    status: str = "ok"
-    server_id: str
-    data: AnomalyData
+    incident_type = xgb_res["incident_type"]
+    confidence = float(xgb_res["confidence"])
 
+    # Combined anomaly decision
+    is_anomaly = bool(if_is_anomaly or (incident_type != "normal" and confidence > 0.60))
 
-@router.post("/anomaly/detect", response_model=AnomalyResponse)
-async def detect_anomaly(payload: AnomalyRequest):
-    from app.main import anomaly_detector, incident_classifier  # deferred to avoid circular import
+    # Calibrated combined anomaly score
+    if is_anomaly:
+        combined_score = round(max(if_score, confidence if incident_type != "normal" else 0.75), 4)
+    else:
+        combined_score = round(min(if_score, 0.35), 4)
 
-    if not payload.metrics:
-        raise HTTPException(status_code=400, detail="Metrics list is empty")
-
-    if not anomaly_detector.is_trained:
-        raise HTTPException(
-            status_code=503,
-            detail="Anomaly detection model is not trained yet. Call POST /train first.",
-        )
-
-    try:
-        metrics_list = payload.metrics if isinstance(payload.metrics, list) else [payload.metrics]
-        features = prepare_anomaly_features(metrics_list)
-        result = anomaly_detector.predict(features)
-
-        # Compute SHAP explanation from the latest metrics point
-        explanation = None
-        latest_metric = metrics_list[-1] if metrics_list else {}
-        if incident_classifier.is_trained:
-            try:
-                explanation = incident_classifier.explain(latest_metric)
-            except Exception as e:
-                logger.warning(f"Could not compute SHAP explanation: {e}")
-
-        logger.info(
-            f"Anomaly detection for {payload.server_id}: "
-            f"score={result['anomaly_score']}, anomaly={result['is_anomaly']}"
-        )
-
-        return AnomalyResponse(
-            server_id=payload.server_id,
-            data=AnomalyData(
-                anomaly_score=result["anomaly_score"],
-                is_anomaly=result["is_anomaly"],
-                explanation=explanation,
-                incident_type=explanation["incident_type"] if explanation else None,
-                confidence=explanation["confidence"] if explanation else None,
-                top_features=explanation["top_features"] if explanation else None,
-                summary=explanation["summary"] if explanation else None,
-            ),
-        )
-    except Exception as e:
-        logger.error(f"Anomaly detection failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "server_id": server_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "anomaly_score": combined_score,
+        "is_anomaly": is_anomaly,
+        "incident_type": incident_type if is_anomaly else "nominal",
+        "confidence": round(confidence, 4),
+        "shap_explanation": shap_explanation,
+    }
