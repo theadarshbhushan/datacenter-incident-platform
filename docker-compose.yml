@@ -137,7 +137,7 @@ services:
 
   backend:
     build:
-      context: ./services/backend
+      context: ./dc-backend
       dockerfile: Dockerfile
     container_name: dc-backend
     restart: unless-stopped
@@ -172,7 +172,7 @@ services:
 
   ml-service:
     build:
-      context: ./services/ml
+      context: ./dc-ml
       dockerfile: Dockerfile
     container_name: dc-ml-service
     restart: unless-stopped
@@ -198,7 +198,7 @@ services:
 
   frontend:
     build:
-      context: ./services/frontend
+      context: ./dc-frontend
       dockerfile: Dockerfile
     container_name: dc-frontend
     restart: unless-stopped
@@ -215,7 +215,7 @@ services:
 
   celery-worker:
     build:
-      context: ./services/backend
+      context: ./dc-backend
       dockerfile: Dockerfile
     container_name: dc-celery-worker
     restart: unless-stopped
@@ -243,7 +243,7 @@ services:
 
   ingestion:
     build:
-      context: ./services/ingestion
+      context: ./dc-ingestion
       dockerfile: Dockerfile
     container_name: dc-ingestion
     restart: unless-stopped
