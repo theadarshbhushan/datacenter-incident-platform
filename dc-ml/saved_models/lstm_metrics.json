@@ -1,0 +1,26 @@
+{
+  "model": "Bi-LSTM with Temporal Attention",
+  "architecture": {
+    "input_features": 6,
+    "hidden_size": 128,
+    "num_layers": 2,
+    "bidirectional": true,
+    "attention_dim": 64,
+    "output_steps": 10,
+    "output_features": 2
+  },
+  "sequence_length": 60,
+  "forecast_steps": 10,
+  "train_sequences": 33669,
+  "test_sequences": 7905,
+  "training_time_seconds": 48.41,
+  "mae_cpu": 6.875,
+  "rmse_cpu": 12.244,
+  "mape_cpu": 207.308,
+  "mae_ram": 6.664,
+  "rmse_ram": 10.522,
+  "mape_ram": 55.469,
+  "overall_mae": 6.77,
+  "overall_rmse": 11.383,
+  "overall_mape": 131.388
+}
