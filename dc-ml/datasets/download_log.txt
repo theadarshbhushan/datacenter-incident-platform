@@ -1,0 +1,200 @@
+================================================================================
+DATA CENTER INCIDENT PLATFORM -- DATASET DOWNLOADER
+Target Directory: D:\datacenter-incident-platform\dc-ml\datasets
+Timestamp: 2026-09-12 15:35:18
+================================================================================
+
+[1/3] Downloading Yahoo Anomaly Benchmark (NAB) Datasets...
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_24ae8d.csv
+  [OK] Saved to: ec2_cpu_utilization_24ae8d.csv (102.90 KB) in 0.42s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_53ea38.csv
+  [OK] Saved to: ec2_cpu_utilization_53ea38.csv (113.32 KB) in 0.36s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_77c1ef.csv
+  [404 Not Found] trying fallback if available...
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_77c1ca.csv
+  [OK] Saved to: ec2_cpu_utilization_77c1ef.csv (103.52 KB) in 0.38s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_825cc2.csv
+  [OK] Saved to: ec2_cpu_utilization_825cc2.csv (111.01 KB) in 0.36s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_cpu_utilization_ac20cd.csv
+  [OK] Saved to: ec2_cpu_utilization_ac20cd.csv (114.24 KB) in 0.45s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_disk_write_bytes_1ef3de.csv
+  [OK] Saved to: ec2_disk_write_bytes_1ef3de.csv (113.89 KB) in 0.44s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/ec2_network_in_257a54.csv
+  [OK] Saved to: ec2_network_in_257a54.csv (114.49 KB) in 0.44s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/data/realAWSCloudwatch/rds_cpu_utilization_cc0c53.csv
+  [OK] Saved to: rds_cpu_utilization_cc0c53.csv (115.04 KB) in 0.44s
+  Fetching: https://raw.githubusercontent.com/numenta/NAB/master/labels/combined_windows.json
+  [OK] Saved to: combined_windows.json (15.00 KB) in 0.51s
+
+[2/3] Downloading Google Cluster Traces Metadata...
+  Fetching: https://raw.githubusercontent.com/google/cluster-data/master/ClusterData2011_2.md
+  [OK] Saved to: ClusterData2011_2.md (4.05 KB) in 0.57s
+
+[3/3] Downloading Azure Public Dataset Traces...
+  Fetching: https://raw.githubusercontent.com/Azure/AzurePublicDataset/master/data/AzurePublicDatasetLinksV2.txt
+  [404 Not Found] trying fallback if available...
+  Fetching: https://raw.githubusercontent.com/Azure/AzurePublicDataset/master/AzurePublicDatasetLinksV2.txt
+  [OK] Saved to: links.txt (27.49 KB) in 0.39s
+
+Parsing Azure links.txt to find first 3 .csv / .gz files...
+Found 3 target files to download:
+  1. schema.csv (https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/schema.csv)
+  2. trace_data_vmtable_vmtable.csv.gz (https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/trace_data_vmtable_vmtable.csv.gz)
+  3. trace_data_deployments_deployments.csv.gz (https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/trace_data_deployments_deployments.csv.gz)
+  Fetching: https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/schema.csv
+    -> Progress: 1.45 KB / 1.45 KB (100.0%)
+  [OK] Saved to: schema.csv (1.45 KB) in 1.23s
+  Fetching: https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/trace_data_vmtable_vmtable.csv.gz
+    -> Progress: 26.00 MB / 417.32 MB (6.2%)
+    -> Progress: 48.00 MB / 417.32 MB (11.5%)
+    -> Progress: 58.00 MB / 417.32 MB (13.9%)
+    -> Progress: 76.00 MB / 417.32 MB (18.2%)
+    -> Progress: 92.00 MB / 417.32 MB (22.0%)
+    -> Progress: 102.00 MB / 417.32 MB (24.4%)
+    -> Progress: 122.00 MB / 417.32 MB (29.2%)
+    -> Progress: 144.00 MB / 417.32 MB (34.5%)
+    -> Progress: 166.00 MB / 417.32 MB (39.8%)
+    -> Progress: 174.00 MB / 417.32 MB (41.7%)
+    -> Progress: 196.00 MB / 417.32 MB (47.0%)
+    -> Progress: 218.00 MB / 417.32 MB (52.2%)
+    -> Progress: 228.00 MB / 417.32 MB (54.6%)
+    -> Progress: 250.00 MB / 417.32 MB (59.9%)
+    -> Progress: 274.00 MB / 417.32 MB (65.7%)
+    -> Progress: 284.00 MB / 417.32 MB (68.1%)
+    -> Progress: 310.00 MB / 417.32 MB (74.3%)
+    -> Progress: 338.00 MB / 417.32 MB (81.0%)
+    -> Progress: 350.00 MB / 417.32 MB (83.9%)
+    -> Progress: 384.00 MB / 417.32 MB (92.0%)
+    -> Progress: 412.00 MB / 417.32 MB (98.7%)
+    -> Progress: 417.32 MB / 417.32 MB (100.0%)
+  [OK] Saved to: trace_data_vmtable_vmtable.csv.gz (417.32 MB) in 115.30s
+  Fetching: https://github.com/Azure/AzurePublicDataset/releases/download/dataset-v2/trace_data_deployments_deployments.csv.gz
+    -> Progress: 1.93 MB / 1.93 MB (100.0%)
+  [OK] Saved to: trace_data_deployments_deployments.csv.gz (1.93 MB) in 1.39s
+
+================================================================================
+DOWNLOAD SUMMARY
+================================================================================
+
+Total Files Downloaded: 14
+Total Cumulative Size:   420.17 MB
+
+Dataset Group                | Files  | Total Size  
+----------------------------------------------------
+NAB (AWS CloudWatch)         | 9      | 903.42 KB   
+Google Cluster Traces        | 1      | 4.05 KB     
+Azure Public Dataset         | 4      | 419.28 MB   
+
+Detailed File List:
+Filename                                           | Size         | Dataset               
+----------------------------------------------------------------------------------------
+ec2_cpu_utilization_24ae8d.csv                     | 102.90 KB    | NAB (AWS CloudWatch)  
+ec2_cpu_utilization_53ea38.csv                     | 113.32 KB    | NAB (AWS CloudWatch)  
+ec2_cpu_utilization_77c1ef.csv                     | 103.52 KB    | NAB (AWS CloudWatch)  
+ec2_cpu_utilization_825cc2.csv                     | 111.01 KB    | NAB (AWS CloudWatch)  
+ec2_cpu_utilization_ac20cd.csv                     | 114.24 KB    | NAB (AWS CloudWatch)  
+ec2_disk_write_bytes_1ef3de.csv                    | 113.89 KB    | NAB (AWS CloudWatch)  
+ec2_network_in_257a54.csv                          | 114.49 KB    | NAB (AWS CloudWatch)  
+rds_cpu_utilization_cc0c53.csv                     | 115.04 KB    | NAB (AWS CloudWatch)  
+combined_windows.json                              | 15.00 KB     | NAB (AWS CloudWatch)  
+ClusterData2011_2.md                               | 4.05 KB      | Google Cluster Traces 
+links.txt                                          | 27.49 KB     | Azure Public Dataset  
+schema.csv                                         | 1.45 KB      | Azure Public Dataset  
+trace_data_vmtable_vmtable.csv.gz                  | 417.32 MB    | Azure Public Dataset  
+trace_data_deployments_deployments.csv.gz          | 1.93 MB      | Azure Public Dataset  
+
+================================================================================
+CSV DATA PREVIEWS (First 5 Rows of Each CSV / GZ Dataset)
+================================================================================
+
+[1/11] Preview: ec2_cpu_utilization_24ae8d.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-02-14 14:30:00,0.132
+  Row 3: 2014-02-14 14:35:00,0.134
+  Row 4: 2014-02-14 14:40:00,0.134
+  Row 5: 2014-02-14 14:45:00,0.134
+
+[2/11] Preview: ec2_cpu_utilization_53ea38.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-02-14 14:30:00,1.732
+  Row 3: 2014-02-14 14:35:00,1.732
+  Row 4: 2014-02-14 14:40:00,1.96
+  Row 5: 2014-02-14 14:45:00,1.732
+
+[3/11] Preview: ec2_cpu_utilization_77c1ef.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-04-02 14:25:00,0.068
+  Row 3: 2014-04-02 14:30:00,0.102
+  Row 4: 2014-04-02 14:35:00,0.1
+  Row 5: 2014-04-02 14:40:00,0.098
+
+[4/11] Preview: ec2_cpu_utilization_825cc2.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-04-10 00:04:00,91.958
+  Row 3: 2014-04-10 00:09:00,94.79799999999999
+  Row 4: 2014-04-10 00:14:00,92.208
+  Row 5: 2014-04-10 00:19:00,93.72200000000001
+
+[5/11] Preview: ec2_cpu_utilization_ac20cd.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-04-02 14:29:00,42.652
+  Row 3: 2014-04-02 14:34:00,41.361999999999995
+  Row 4: 2014-04-02 14:39:00,43.408
+  Row 5: 2014-04-02 14:44:00,40.262
+
+[6/11] Preview: ec2_disk_write_bytes_1ef3de.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-03-01 17:34:00,0.0
+  Row 3: 2014-03-01 17:39:00,0.0
+  Row 4: 2014-03-01 17:44:00,0.0
+  Row 5: 2014-03-01 17:49:00,0.0
+
+[7/11] Preview: ec2_network_in_257a54.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-04-10 00:04:00,251643.0
+  Row 3: 2014-04-10 00:09:00,3203510.0
+  Row 4: 2014-04-10 00:14:00,287397.0
+  Row 5: 2014-04-10 00:19:00,238944.0
+
+[8/11] Preview: rds_cpu_utilization_cc0c53.csv (NAB (AWS CloudWatch))
+--------------------------------------------------------------------------------
+  Row 1: timestamp,value
+  Row 2: 2014-02-14 14:30:00,6.456
+  Row 3: 2014-02-14 14:35:00,5.816
+  Row 4: 2014-02-14 14:40:00,6.268
+  Row 5: 2014-02-14 14:45:00,5.816
+
+[9/11] Preview: schema.csv (Azure Public Dataset)
+--------------------------------------------------------------------------------
+  Row 1: filepattern,field_number,content,format
+  Row 2: vm_virtual_core_bucket_definition.csv,1,bucket,STRING
+  Row 3: vm_virtual_core_bucket_definition.csv,2,definition,STRING
+  Row 4: vm_memory_bucket_definition.csv,1,bucket,STRING
+  Row 5: vm_memory_bucket_definition.csv,2,definition,STRING
+
+[10/11] Preview: trace_data_vmtable_vmtable.csv.gz (Azure Public Dataset)
+--------------------------------------------------------------------------------
+  Row 1: 71fJw0x+SDRdAxKPwLyHZhTgQpYw2afS6tjJhfT6kHnmLH54/rl2etJKUpSFKoTB,GB6uQC1NSArW5n+TtOybL7GQ1yByjuWtZnsj+5QccZ525R2wi5t9jPe8K5tU8MjR,2sh/ZjaYdfpslv4iYBfNzFe4rs982kHVvNGJGeQ8MIBCDr3EBYlXlNvViSonMAjfFuCpsbEPDDfydWwf/naB5Q==,558300,1673700,91.776885421193157,0.72887880462586729,20.759629514971522,Delay-insensitive,8,32
+  Row 2: rKggHO/04j31UFy65mDTwtjdMQL/G03xWfl3xGeiilB4/W6gnWiD99ZhAo++QEVR,ub4ty8ygwOECrIz7eaZ/9hDwnCsERvZ3nJJ03sDSpD85etqtzAmy6d1wlhzBnAHK,+ZraIDUNaWYDZMBiBtZm7xSjr+j3zcHGjup1+wyKxHFmyJjuVknHvHGD8PDw19kdrwyWStif04+uIOGVi4m/MA==,424500,425400,37.879260500697249,3.3253576627456543,37.879260500697249,Unknown,4,32
+  Row 3: YrR8gPtBmfNaOdnNEW5If1SdTqQgGQHEnLHGPjySt53bKWsIlS26Phl9Uf5VHiso,9LrdYRcUfGbmL2fFfLR/JUg2OTkjGRe3iluwIhDRPnPDPaeBoI++cGPft6H/3QjV,GEyIElfPSFupze8T+T1niQMepeqG88VpLNuxUMyIDbz8VFbedMPl9qpkESVGcWPTuPZ07eSPnNjg3rQXZFgdkg==,1133100,1133700,0.30436761313316585,0.22055331663398622,0.30436761313316585,Unknown,4,32
+  Row 4: xzQ++JF1UAkh70CDhmzkiOo+DQn+E2TLErCFKEmSswv1plXUxMIY6LUBGGvHU6et,0XnZZ8sMN5HY+Yg+0dykYB5oenlgsrCpzpgFSvn/MX42Ze0b32RJCLF6y9U3ybXe,7aCQS6fPUw9rwCPiqvghk/WCEbMV3KgNJjA+sssdfY5YblgbsnkEE5Bm386vynr+qfWP3U5lluWYHd55SWnpuA==,0,2591400,98.573423733192328,30.340053658063326,98.212502743963356,Interactive,2,4
+  Row 5: vZEivnhabRmImDr+JqKqZnpIM3WxtypwoxjfjnklR/idyRguCwj7lN8NAsWi+IGB,HUGaZ+piPP4eHjycCBki2yq0raJywdzrVuriR6nQceH3hAm1eGABWpFJG7bcGQba,/s/D5VtTQDxyS6wq7N/VQAMczx61Ny1Ut3a3iFmDSOCXxpmYP/UMHY+G5f6CxzOzNbfItd2BZn398b8yvRKGpg==,228300,229800,82.58144911674195,13.876299235807727,82.58144911674195,Unknown,2,4
+
+[11/11] Preview: trace_data_deployments_deployments.csv.gz (Azure Public Dataset)
+--------------------------------------------------------------------------------
+  Row 1: +EZ/AWPlMyGxKY9bSsXYV+nf3hgJLlR7kNJPNNJDerKjM3P3NIjsmoIBcySwoQwPj8fnC+cxTPRCj5oX6YlU0g==,11
+  Row 2: +ZraIDUNaWYDZMBiBtZm7xSjr+j3zcHGjup1+wyKxHF+kd4ZJ+xGh63XP9xhIFdDOZvgjrAcbXKKX4XyO6UTew==,9
+  Row 3: /+3IQ9csEUWlX/OR5lHSiUh+EH54WfI9nfpjniqCk/cQigWzRjzDzKD/f63+HMV5G0VDHlis8CuqAm+LSF6eYQ==,2
+  Row 4: /5mEvsIGOul7DM6xGef5rE1u0TZg4N7dkSmotRO1D87M8iJcI5/b0hP5ix1pNNBrlGjo5V65yplgIyB+cNSOwg==,23
+  Row 5: /DrUXkHMnF+IdCiFWiT06P/2CZBiZ7Y1WLfTZGV7hU868Cax7UfVPl6+iRPmYw/vEdDraSlusYQA88d9RhYIzA==,11
+
+================================================================================
+Log saved successfully to: D:\datacenter-incident-platform\dc-ml\datasets\download_log.txt
+================================================================================
