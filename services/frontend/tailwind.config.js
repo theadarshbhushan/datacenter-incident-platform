@@ -7,17 +7,46 @@ export default {
   theme: {
     extend: {
       colors: {
-        darkBg: "#0B0F19",
-        panelBg: "#151C2C",
-        cardBg: "rgba(21, 28, 44, 0.6)",
-        borderSlate: "#222D44",
-        accentCyan: "#00E5FF",
-        accentEmerald: "#10B981",
-        accentRose: "#F43F5E",
-        accentAmber: "#F59E0B"
+        ibmBlue: {
+          DEFAULT: "#0F62FE",
+          hover: "#0353E9",
+          active: "#002D9C",
+          subtle: "#EDF5FF",
+        },
+        canvasBg: "#F4F4F4",
+        surface: "#FFFFFF",
+        cardBorder: "#E0E0E0",
+        textPrimary: "#161616",
+        textSecondary: "#525252",
+        statusSuccess: {
+          DEFAULT: "#24A148",
+          bg: "#DEFBE6",
+          border: "#A7F0BA",
+        },
+        statusWarning: {
+          DEFAULT: "#F1C21B",
+          bg: "#FEF7D9",
+          border: "#FDE876",
+        },
+        statusDanger: {
+          DEFAULT: "#DA1E28",
+          bg: "#FFF1F1",
+          border: "#FFD7D9",
+        },
+      },
+      borderRadius: {
+        DEFAULT: "4px",
+        sm: "2px",
+        md: "4px",
+        lg: "6px",
       },
       fontFamily: {
-        sans: ["Inter", "sans-serif"],
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+      },
+      boxShadow: {
+        card: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+        drawer: "-4px 0 16px rgba(0, 0, 0, 0.08)",
+        modal: "0 12px 24px rgba(0, 0, 0, 0.12)",
       }
     },
   },

@@ -1,28 +1,58 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Server,
+  Plus,
+  Search,
+  Filter,
+  TrendingUp,
+  Brain,
+  Edit2,
+  Trash2,
+  X,
+  CheckCircle2,
+  Cpu,
+  Database,
+  HardDrive,
+  MapPin,
+  RefreshCw,
+} from 'lucide-react';
 import { serversAPI } from '../services/api';
-import { Plus, Edit2, Trash2, X, Cpu, Database, HardDrive, MapPin, CheckCircle } from 'lucide-react';
+import SeverityBadge from '../components/SeverityBadge';
+import ConfirmModal from '../components/ConfirmModal';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export const Servers = () => {
+  const navigate = useNavigate();
   const [servers, setServers] = useState([]);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingServer, setEditingServer] = useState(null);
-  
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
+
   const [formData, setFormData] = useState({
     name: '',
     hostname: '',
     ip_address: '',
-    cpu_cores: 8,
-    ram_gb: 32,
-    disk_gb: 500,
-    location: '',
+    cpu_cores: 32,
+    ram_gb: 128,
+    disk_gb: 1000,
+    location: 'Rack-A',
   });
 
   const fetchServers = async () => {
     try {
+      setLoading(true);
       const data = await serversAPI.getServers();
       setServers(data);
     } catch (err) {
-      console.error('Failed to load server records:', err);
+      console.error('Failed to load servers:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -34,36 +64,37 @@ export const Servers = () => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: ['cpu_cores', 'ram_gb', 'disk_gb'].includes(name) ? parseInt(value) || 0 : value,
+      [name]: ['cpu_cores', 'ram_gb', 'disk_gb'].includes(name) ? parseInt(value, 10) || 0 : value,
     }));
   };
 
-  const handleEditClick = (server) => {
-    setEditingServer(server);
-    setFormData({
-      name: server.name,
-      hostname: server.hostname,
-      ip_address: server.ip_address,
-      cpu_cores: server.cpu_cores,
-      ram_gb: server.ram_gb,
-      disk_gb: server.disk_gb,
-      location: server.location,
-    });
-    setIsFormOpen(true);
-  };
-
-  const handleAddClick = () => {
+  const handleOpenAddModal = () => {
     setEditingServer(null);
     setFormData({
       name: '',
       hostname: '',
-      ip_address: '',
-      cpu_cores: 8,
-      ram_gb: 32,
-      disk_gb: 500,
-      location: '',
+      ip_address: '10.0.1.',
+      cpu_cores: 32,
+      ram_gb: 128,
+      disk_gb: 1000,
+      location: 'Rack-A',
     });
-    setIsFormOpen(true);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (server, e) => {
+    e.stopPropagation();
+    setEditingServer(server);
+    setFormData({
+      name: server.name || '',
+      hostname: server.hostname || '',
+      ip_address: server.ip_address || '',
+      cpu_cores: server.cpu_cores || 32,
+      ram_gb: server.ram_gb || 128,
+      disk_gb: server.disk_gb || 1000,
+      location: server.location || server.rack || 'Rack-A',
+    });
+    setIsModalOpen(true);
   };
 
   const handleSubmit = async (e) => {
@@ -74,241 +105,316 @@ export const Servers = () => {
       } else {
         await serversAPI.createServer(formData);
       }
-      setIsFormOpen(false);
+      setIsModalOpen(false);
       fetchServers();
     } catch (err) {
       console.error('Failed to save server:', err);
-      alert(err.response?.data?.detail || 'Failed to save server settings.');
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this server instance? This will remove all associated metric logs.')) return;
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
     try {
-      await serversAPI.deleteServer(id);
+      await serversAPI.deleteServer(deleteTargetId);
+      setDeleteTargetId(null);
       fetchServers();
     } catch (err) {
-      console.error('Failed to delete server record:', err);
+      console.error('Failed to delete server:', err);
     }
   };
 
+  const filteredServers = servers.filter((srv) => {
+    const matchesSearch =
+      srv.hostname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (srv.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (srv.ip_address || '').includes(searchQuery);
+
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'critical' ? srv.status === 'anomalous' || srv.status === 'critical' : srv.status === 'healthy');
+
+    return matchesSearch && matchesStatus;
+  });
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center border-b border-borderSlate pb-4">
+    <div className="space-y-6 pb-12">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold tracking-wider text-slate-100 uppercase">
-            Server Infrastructure
-          </h2>
-          <span className="text-xs text-slate-500 font-medium">Provision and manage datacenter nodes</span>
+          <h1 className="text-xl font-bold text-[#161616] tracking-tight flex items-center gap-2">
+            Server Infrastructure Inventory
+          </h1>
+          <p className="text-xs text-[#525252] mt-0.5">
+            Provision bare-metal compute instances, inspect telemetry allocations, and trigger risk predictions
+          </p>
         </div>
-        <button
-          onClick={handleAddClick}
-          className="flex items-center gap-1.5 bg-accentCyan hover:bg-accentCyan/90 text-darkBg py-2 px-4 rounded-lg text-xs font-bold transition-all shadow-lg glow-cyan"
-        >
-          <Plus className="w-4 h-4" />
-          Add Server
-        </button>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={fetchServers}
+            className="btn-secondary text-xs flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#525252]" />
+            <span>Sync Fleet</span>
+          </button>
+          <button
+            onClick={handleOpenAddModal}
+            className="btn-primary text-xs flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Provision Node</span>
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        
-        {/* List */}
-        <div className="xl:col-span-2 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-              Inventory Ledger
-            </h3>
-            <span className="text-xs text-slate-500 font-semibold">{servers.length} Nodes Registered</span>
-          </div>
-
-          <div className="space-y-3">
-            {servers.length === 0 ? (
-              <div className="glass-panel p-8 text-center text-slate-500 text-xs font-semibold rounded-xl">
-                No servers registered yet. Click 'Add Server' to provision the first one.
-              </div>
-            ) : (
-              servers.map((server) => (
-                <div 
-                  key={server.id} 
-                  className="glass-panel p-4 rounded-xl border border-borderSlate hover:border-slate-700 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm text-slate-200">{server.name}</h4>
-                      <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400 font-bold border border-borderSlate">
-                        {server.hostname}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span>IP: {server.ip_address}</span>
-                      <span>&bull;</span>
-                      <span className="capitalize">Status: <span className="font-bold text-accentEmerald">{server.status}</span></span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-4 text-[10px] text-slate-400 font-bold uppercase tracking-wide">
-                    <div className="flex items-center gap-1">
-                      <Cpu className="w-3.5 h-3.5 text-slate-600" />
-                      <span>{server.cpu_cores} VCPUs</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Database className="w-3.5 h-3.5 text-slate-600" />
-                      <span>{server.ram_gb} GB RAM</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <HardDrive className="w-3.5 h-3.5 text-slate-600" />
-                      <span>{server.disk_gb} GB SSD</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-slate-600" />
-                      <span>{server.location}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEditClick(server)}
-                      className="p-2 rounded bg-slate-900/60 border border-borderSlate hover:border-accentCyan/50 text-slate-400 hover:text-accentCyan transition-all"
-                      title="Edit Properties"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(server.id)}
-                      className="p-2 rounded bg-slate-900/60 border border-borderSlate hover:border-accentRose/50 text-slate-400 hover:text-accentRose transition-all"
-                      title="Delete Node"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+      {/* Filter Row */}
+      <div className="card p-4 bg-white flex flex-col md:flex-row items-center justify-between gap-3">
+        <div className="relative w-full md:w-80">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#525252]" />
+          <input
+            type="text"
+            placeholder="Search hostname, IP, or workload tag..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] focus:bg-white focus:outline-none focus:border-[#0F62FE]"
+          />
         </div>
 
-        {/* Provision Form */}
-        {isFormOpen && (
-          <div className="glass-panel p-5 rounded-xl border border-accentCyan/20 glow-cyan/5">
-            <div className="flex justify-between items-center mb-4 border-b border-borderSlate pb-3">
-              <h3 className="font-bold text-sm tracking-wider uppercase text-slate-200">
-                {editingServer ? 'Modify Server' : 'Provision Server'}
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-[#525252] font-medium">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-white border border-[#E0E0E0] rounded-[3px] px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#0F62FE]"
+            >
+              <option value="all">All Statuses ({servers.length})</option>
+              <option value="healthy">Healthy Nodes</option>
+              <option value="critical">Critical / Alerting</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Inventory Table */}
+      <div className="card bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-[#E0E0E0] bg-[#F4F4F4] text-[11px] font-semibold text-[#525252] uppercase tracking-wider">
+                <th className="py-2.5 px-4">Hostname & Name</th>
+                <th className="py-2.5 px-4">IPv4 Address</th>
+                <th className="py-2.5 px-4">Rack & Pod</th>
+                <th className="py-2.5 px-4">Hardware Specs</th>
+                <th className="py-2.5 px-4">Health Status</th>
+                <th className="py-2.5 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E0E0E0]">
+              {filteredServers.map((server) => {
+                const isAnomalous = server.status === 'anomalous' || server.status === 'critical';
+
+                return (
+                  <tr
+                    key={server.id || server.hostname}
+                    className="hover:bg-[#F4F4F4] transition-colors"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-[#161616] font-mono">{server.hostname}</div>
+                      <div className="text-[11px] text-[#525252]">{server.name || 'Generic Compute Node'}</div>
+                    </td>
+                    <td className="py-3 px-4 font-mono text-[#525252]">
+                      {server.ip_address}
+                    </td>
+                    <td className="py-3 px-4 text-[#161616] font-medium">
+                      {server.location || server.rack || 'Rack-A'}
+                    </td>
+                    <td className="py-3 px-4 text-[#525252] font-mono text-[11px]">
+                      {server.cpu_cores || 32} vCPU · {server.ram_gb || 128} GB RAM · {server.disk_gb || 1000} GB SSD
+                    </td>
+                    <td className="py-3 px-4">
+                      <SeverityBadge
+                        severity={isAnomalous ? 'critical' : 'healthy'}
+                        label={isAnomalous ? 'ANOMALY DETECTED' : 'HEALTHY'}
+                      />
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => navigate(`/predictions?server=${server.hostname}`)}
+                          className="btn-secondary text-[11px] px-2.5 py-1 text-[#0F62FE] hover:bg-[#EDF5FF] flex items-center gap-1"
+                        >
+                          <TrendingUp className="w-3 h-3" />
+                          <span>Predict</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleOpenEditModal(server, e)}
+                          className="p-1 text-[#525252] hover:text-[#0F62FE] hover:bg-[#EDF5FF] rounded"
+                          title="Edit Node"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTargetId(server.id);
+                          }}
+                          className="p-1 text-[#525252] hover:text-[#DA1E28] hover:bg-[#FFF1F1] rounded"
+                          title="Decommission Node"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Provision / Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4">
+          <div className="bg-white rounded-[4px] border border-[#E0E0E0] shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in duration-150">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#E0E0E0] bg-[#F4F4F4]">
+              <h3 className="text-sm font-bold text-[#161616]">
+                {editingServer ? `Modify Node ${editingServer.hostname}` : 'Provision Infrastructure Node'}
               </h3>
-              <button 
-                onClick={() => setIsFormOpen(false)}
-                className="text-slate-500 hover:text-slate-200 transition-all"
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-[#525252] hover:text-[#161616] p-1"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs font-semibold text-slate-400">
-              <div className="space-y-1">
-                <label className="block">Display Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Database Server 1"
-                  className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
-                />
-              </div>
-
+            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block">Hostname</label>
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">Hostname</label>
                   <input
                     type="text"
-                    name="hostname"
                     required
                     disabled={!!editingServer}
                     value={formData.hostname}
                     onChange={handleInputChange}
-                    placeholder="e.g. db-srv-01"
-                    className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan disabled:opacity-50 disabled:cursor-not-allowed"
+                    name="hostname"
+                    placeholder="e.g. server-037"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE] disabled:opacity-50"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="block">IP Address</label>
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">Display Label</label>
                   <input
                     type="text"
-                    name="ip_address"
+                    required
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    name="name"
+                    placeholder="e.g. Ingestion Gateway Pod"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">IPv4 Address</label>
+                  <input
+                    type="text"
                     required
                     value={formData.ip_address}
                     onChange={handleInputChange}
-                    placeholder="e.g. 10.0.1.15"
-                    className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
+                    name="ip_address"
+                    placeholder="10.0.1.37"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">Rack Location</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    name="location"
+                    placeholder="Rack-A (U12)"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <label className="block">VCPUs</label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">vCPUs</label>
                   <input
                     type="number"
-                    name="cpu_cores"
-                    required
                     min={1}
+                    required
                     value={formData.cpu_cores}
                     onChange={handleInputChange}
-                    className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
+                    name="cpu_cores"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="block">RAM (GB)</label>
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">RAM (GB)</label>
                   <input
                     type="number"
-                    name="ram_gb"
-                    required
                     min={1}
+                    required
                     value={formData.ram_gb}
                     onChange={handleInputChange}
-                    className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
+                    name="ram_gb"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="block">Disk (GB)</label>
+                <div>
+                  <label className="block font-semibold text-[#161616] mb-1">SSD Disk (GB)</label>
                   <input
                     type="number"
-                    name="disk_gb"
-                    required
                     min={1}
+                    required
                     value={formData.disk_gb}
                     onChange={handleInputChange}
-                    className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
+                    name="disk_gb"
+                    className="w-full bg-[#F4F4F4] border border-[#E0E0E0] rounded-[3px] p-2 text-xs focus:bg-white focus:outline-none focus:border-[#0F62FE]"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="block">Data Center Location</label>
-                <input
-                  type="text"
-                  name="location"
-                  required
-                  value={formData.location}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Rack-B04"
-                  className="w-full bg-slate-950/70 border border-borderSlate rounded p-2.5 text-slate-200 focus:outline-none focus:border-accentCyan"
-                />
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E0E0E0]">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="btn-secondary text-xs px-4 py-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs px-4 py-2"
+                >
+                  {editingServer ? 'Save Changes' : 'Confirm Provisioning'}
+                </button>
               </div>
-
-              <button
-                type="submit"
-                className="w-full flex items-center justify-center gap-1 bg-accentCyan hover:bg-accentCyan/90 text-darkBg py-2.5 rounded-lg text-xs font-bold transition-all shadow-lg glow-cyan"
-              >
-                <CheckCircle className="w-4 h-4" />
-                {editingServer ? 'Save Changes' : 'Provision Node'}
-              </button>
             </form>
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTargetId}
+        title="Decommission Server Instance"
+        message="Are you sure you want to decommission this node? Telemetry logging and predictive model training on this node will cease immediately."
+        confirmText="Decommission"
+        isDanger={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </div>
   );
 };
