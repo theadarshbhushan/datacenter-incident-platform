@@ -1,0 +1,30 @@
+{
+  "total_records": 42954,
+  "train_records": 34363,
+  "test_records": 8591,
+  "anomaly_count": 7781,
+  "anomaly_percentage": 18.11,
+  "records_per_server": {
+    "server-01": 4032,
+    "server-02": 4032,
+    "server-03": 4032,
+    "server-04": 4032,
+    "server-05": 4032,
+    "server-06": 4730,
+    "server-07": 4032,
+    "server-08": 4032,
+    "server-09": 5000,
+    "server-10": 5000
+  },
+  "anomaly_type_distribution": {
+    "normal": 35173,
+    "cpu_spike": 4576,
+    "thermal_event": 3006,
+    "disk_failure": 152,
+    "network_anomaly": 47
+  },
+  "date_range": {
+    "start": "2014-02-14 00:00:00",
+    "end": "2014-04-24 00:09:00"
+  }
+}
