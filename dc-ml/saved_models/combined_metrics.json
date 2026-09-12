@@ -1,0 +1,175 @@
+{
+  "timestamp": "2026-09-12T16:01:57.122109",
+  "models": {
+    "isolation_forest": {
+      "model": "Isolation Forest",
+      "n_estimators": 200,
+      "contamination": 0.18,
+      "train_samples": 34363,
+      "test_samples": 8591,
+      "training_time_seconds": 0.51,
+      "accuracy": 0.8777,
+      "precision": 0.6636,
+      "recall": 0.6581,
+      "f1_score": 0.6609,
+      "roc_auc": 0.8176
+    },
+    "xgboost": {
+      "model": "XGBoost Classifier",
+      "n_estimators": 300,
+      "max_depth": 6,
+      "learning_rate": 0.1,
+      "features": [
+        "cpu_pct",
+        "ram_pct",
+        "disk_io_mbps",
+        "net_mbps",
+        "temp_celsius",
+        "disk_used_pct",
+        "cpu_ram_ratio",
+        "thermal_stress",
+        "io_pressure"
+      ],
+      "classes": [
+        "cpu_spike",
+        "disk_failure",
+        "network_anomaly",
+        "normal",
+        "thermal_event"
+      ],
+      "train_samples": 34363,
+      "test_samples": 8591,
+      "training_time_seconds": 1.89,
+      "accuracy": 0.8318,
+      "precision": 0.8904,
+      "recall": 0.8318,
+      "f1_score": 0.857,
+      "roc_auc": 0.8845,
+      "classification_report": {
+        "cpu_spike": {
+          "precision": 0.9966923925027563,
+          "recall": 0.9977924944812362,
+          "f1-score": 0.9972421400992829,
+          "support": 906.0
+        },
+        "disk_failure": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 30.0
+        },
+        "network_anomaly": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 7.0
+        },
+        "normal": {
+          "precision": 0.9385194479297365,
+          "recall": 0.8506041222459133,
+          "f1-score": 0.8924017597494593,
+          "support": 7035.0
+        },
+        "thermal_event": {
+          "precision": 0.17387883556254918,
+          "recall": 0.3605220228384992,
+          "f1-score": 0.2346072186836518,
+          "support": 613.0
+        },
+        "accuracy": 0.8318007216854848,
+        "macro avg": {
+          "precision": 0.8218181351990085,
+          "recall": 0.8417837279131298,
+          "f1-score": 0.8248502237064788,
+          "support": 8591.0
+        },
+        "weighted avg": {
+          "precision": 0.8903591374686342,
+          "recall": 0.8318007216854848,
+          "f1-score": 0.8569854480061081,
+          "support": 8591.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          904,
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          30,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          7,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          5984,
+          1049
+        ],
+        [
+          1,
+          0,
+          0,
+          391,
+          221
+        ]
+      ]
+    },
+    "bilstm_attention": {
+      "model": "Bi-LSTM with Temporal Attention",
+      "architecture": {
+        "input_features": 6,
+        "hidden_size": 128,
+        "num_layers": 2,
+        "bidirectional": true,
+        "attention_dim": 64,
+        "output_steps": 10,
+        "output_features": 2
+      },
+      "sequence_length": 60,
+      "forecast_steps": 10,
+      "train_sequences": 33669,
+      "test_sequences": 7905,
+      "training_time_seconds": 48.41,
+      "mae_cpu": 6.875,
+      "rmse_cpu": 12.244,
+      "mape_cpu": 207.308,
+      "mae_ram": 6.664,
+      "rmse_ram": 10.522,
+      "mape_ram": 55.469,
+      "overall_mae": 6.77,
+      "overall_rmse": 11.383,
+      "overall_mape": 131.388
+    }
+  },
+  "summary": {
+    "isolation_forest": {
+      "accuracy": "87.8%",
+      "f1_score": "66.1%",
+      "roc_auc": "81.8%"
+    },
+    "xgboost": {
+      "accuracy": "83.2%",
+      "f1_score": "85.7%",
+      "roc_auc": "88.4%"
+    },
+    "bilstm": {
+      "accuracy": "N/A",
+      "f1_score": "N/A",
+      "mae": "MAE: 6.77%"
+    }
+  }
+}
