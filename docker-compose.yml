@@ -135,7 +135,7 @@ services:
       retries: 5
       start_period: 30s
 
-  backend:
+  dc-backend:
     build:
       context: ./dc-backend
       dockerfile: Dockerfile
@@ -162,7 +162,9 @@ services:
       kafka:
         condition: service_healthy
     networks:
-      - dc-network
+      dc-network:
+        aliases:
+          - backend
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -170,11 +172,11 @@ services:
       retries: 5
       start_period: 40s
 
-  ml-service:
+  dc-ml:
     build:
       context: ./dc-ml
       dockerfile: Dockerfile
-    container_name: dc-ml-service
+    container_name: dc-ml
     restart: unless-stopped
     env_file:
       - .env
@@ -188,7 +190,9 @@ services:
       mongodb:
         condition: service_healthy
     networks:
-      - dc-network
+      dc-network:
+        aliases:
+          - ml-service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 15s
@@ -196,7 +200,7 @@ services:
       retries: 5
       start_period: 40s
 
-  frontend:
+  dc-frontend:
     build:
       context: ./dc-frontend
       dockerfile: Dockerfile
@@ -208,16 +212,16 @@ services:
       VITE_API_URL: http://localhost:8000
       VITE_WS_URL: ws://localhost:8000
     depends_on:
-      backend:
+      dc-backend:
         condition: service_healthy
     networks:
       - dc-network
 
-  celery-worker:
+  dc-celery:
     build:
       context: ./dc-backend
       dockerfile: Dockerfile
-    container_name: dc-celery-worker
+    container_name: dc-celery
     restart: unless-stopped
     env_file:
       - .env
@@ -236,12 +240,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      ml-service:
+      dc-ml:
         condition: service_healthy
     networks:
       - dc-network
 
-  ingestion:
+  dc-ingestion:
     build:
       context: ./dc-ingestion
       dockerfile: Dockerfile
