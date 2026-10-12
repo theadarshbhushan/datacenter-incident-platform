@@ -4,7 +4,7 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const ML_BASE_URL = import.meta.env.VITE_ML_URL || 'http://localhost:8001';
 
 const api = axios.create({
-  baseURL: `${BASE_URL}/api/v1`,
+  baseURL: 'http://localhost:8000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },

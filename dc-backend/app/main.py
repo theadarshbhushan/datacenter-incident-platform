@@ -25,13 +25,10 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing VaultWatch Backend services...")
-    try:
-        await init_db()
-    except Exception as e:
-        logger.error(f"Failed to initialize database on startup: {e}")
+    await init_db()
+    logger.info("Database initialized")
     yield
-    logger.info("Shutting down VaultWatch Backend services...")
+    logger.info("Shutting down")
     try:
         await close_db()
     except Exception as e:
