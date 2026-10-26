@@ -1,7 +1,10 @@
 __pycache__/ 
 *.pyc 
 .env 
-.env.example 
+.env.* 
+!.env.example 
+!.env.sample 
+*.tgz 
 node_modules/ 
 .pytest_cache/ 
 dist/ 

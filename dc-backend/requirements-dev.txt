@@ -1,0 +1,6 @@
+-r requirements.txt
+# Versions the test suite was run with.
+pytest==9.1.1
+pytest-asyncio==1.4.1
+mongomock==4.3.0
+mongomock-motor==0.0.36

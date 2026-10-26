@@ -9,7 +9,7 @@ from app.models.server import Server
 from app.websocket.manager import ws_manager
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/metrics", tags=["Metrics"])
+router = APIRouter(prefix="/metrics", tags=["Internal telemetry"])
 
 
 class CreateMetricRequest(BaseModel):
@@ -41,28 +41,6 @@ async def get_metrics(
         data=[m.dict() for m in metrics],
         message=f"Retrieved {len(metrics)} metric records",
     )
-
-
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_metric(payload: CreateMetricRequest):
-    m = Metric(
-        server_id=payload.server_id,
-        cpu_pct=payload.cpu_pct,
-        ram_pct=payload.ram_pct,
-        disk_io_mbps=payload.disk_io_mbps or 0.0,
-        net_mbps=payload.net_mbps or 0.0,
-        temp_celsius=payload.temp_celsius or 0.0,
-        disk_used_pct=payload.disk_used_pct or 0.0,
-        timestamp=payload.timestamp or datetime.utcnow(),
-    )
-    await m.insert()
-
-    # Broadcast over WebSocket for real-time dashboards
-    metric_dict = m.dict()
-    metric_dict["timestamp"] = m.timestamp.isoformat()
-    await ws_manager.broadcast({"type": "metric", "data": metric_dict})
-
-    return success_response(data=metric_dict, message="Metric ingested successfully")
 
 
 @router.get("/aggregate/summary")

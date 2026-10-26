@@ -9,7 +9,7 @@ from app.models.alert import Alert
 from app.websocket.manager import ws_manager
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/alerts", tags=["Alerts"])
+router = APIRouter(prefix="/alerts", tags=["Internal telemetry"])
 
 
 class CreateAlertRequest(BaseModel):

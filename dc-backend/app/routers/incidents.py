@@ -10,7 +10,7 @@ from app.models.server import Server
 from app.websocket.manager import ws_manager
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/incidents", tags=["Incidents"])
+router = APIRouter(prefix="/incidents", tags=["Internal telemetry"])
 
 
 class CreateIncidentRequest(BaseModel):

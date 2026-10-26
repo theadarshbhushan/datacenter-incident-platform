@@ -14,7 +14,7 @@ from app.models.server import Server
 from app.websocket.manager import ws_manager
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/predictions", tags=["Predictions & ML"])
+router = APIRouter(prefix="/predictions", tags=["Internal telemetry"])
 
 
 class DetectRequest(BaseModel):

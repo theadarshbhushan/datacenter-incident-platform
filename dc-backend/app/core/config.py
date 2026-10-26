@@ -29,13 +29,56 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "kafka:29092"
     KAFKA_METRICS_TOPIC: str = "server-metrics"
 
-    # Security / JWT
-    JWT_SECRET: str = "your-super-secret-key-here-vaultwatch-2024-jwt"
+    # Security. SECRET_KEY signs CSRF tokens. Required outside development; in development a random
+    # key is generated at startup when it is empty. JWT_* are kept for compatibility and unused by sessions.
+    SECRET_KEY: str = ""
+    JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # ML Service
     ML_SERVICE_URL: str = "http://ml-service:8001"
+
+    # Web app / sessions
+    FRONTEND_URL: str = "http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:5173"  # comma-separated, never "*" with cookies
+    SESSION_TTL_HOURS: int = 12
+    SESSION_REMEMBER_DAYS: int = 30
+    COOKIE_SECURE: bool = True  # browsers accept Secure cookies on http://localhost
+    COOKIE_SAMESITE: str = "lax"  # serve the API on the same site as the frontend (or proxy /api)
+    COOKIE_DOMAIN: str = ""
+    TRUST_PROXY_HEADERS: bool = False  # only behind a proxy you control that sets X-Forwarded-For
+
+    # Service-to-service token for the internal telemetry API (legacy /servers, /incidents, ... routes
+    # and the /ws stream). Empty disables those routes. Never expose it to browsers.
+    INTERNAL_API_TOKEN: str = ""
+
+    # Email: "console" logs messages (and keeps them in a dev mailbox in development); "smtp" sends them
+    EMAIL_BACKEND: str = "console"
+    EMAIL_FROM: str = "VaultWatch <no-reply@example.com>"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_STARTTLS: bool = True
+    CONTACT_INBOX: str = ""
+
+    # Optional providers (leave empty until configured)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    BILLING_PROVIDER: str = ""  # e.g. "stripe" once configured
+
+    @property
+    def secret_key(self) -> str:
+        return self.SECRET_KEY or self.JWT_SECRET
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip() and o.strip() != "*"]
+
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT.lower() in ("development", "dev", "local", "test")
 
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),

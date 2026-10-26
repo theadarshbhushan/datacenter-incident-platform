@@ -10,7 +10,7 @@ from app.models.server import Server
 from app.models.incident import Incident
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(prefix="/analytics", tags=["Internal telemetry"])
 
 
 @router.get("/summary")

@@ -1,11 +1,14 @@
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 from beanie import Document, Indexed
 from pydantic import Field
 
 
 class Server(Document):
-    server_id: Indexed(str, unique=True)
+    server_id: Indexed(str, unique=True)  # "<org_id>/<agent id>" for servers reported with an org API key
+    org_id: Optional[str] = None  # set when ingested with an organization API key
+    agent_id: Optional[str] = None  # the server_id the agent reported
+    last_seen: Optional[datetime] = None
     hostname: str
     ip_address: str
     datacenter: str = "us-east-1"

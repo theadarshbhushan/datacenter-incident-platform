@@ -6,11 +6,9 @@ from loguru import logger
 
 from app.models.server import Server
 from app.models.metric import Metric
-from app.models.user import User
-from app.core.security import get_current_user
 from app.schemas.response import success_response
 
-router = APIRouter(prefix="/servers", tags=["Servers"])
+router = APIRouter(prefix="/servers", tags=["Internal telemetry"])
 
 DEFAULT_SERVERS = [
     {"server_id": "server-01", "hostname": "srv-core-01", "ip_address": "10.0.1.11", "datacenter": "us-east-1", "rack": "Rack-A", "hardware_type": "compute", "status": "healthy"},
@@ -100,7 +98,7 @@ async def get_servers(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_server(payload: CreateServerRequest, current_user: User = Depends(get_current_user)):
+async def create_server(payload: CreateServerRequest):
     existing = await Server.find_one(Server.server_id == payload.server_id)
     if existing:
         raise HTTPException(
@@ -125,7 +123,7 @@ async def create_server(payload: CreateServerRequest, current_user: User = Depen
         tags=payload.tags or [],
     )
     await server.insert()
-    logger.info(f"Server {server.server_id} registered by {current_user.email}")
+    logger.info(f"Server {server.server_id} registered by an internal service")
     return success_response(data=server.dict(), message=f"Server '{server.server_id}' created successfully")
 
 
@@ -149,7 +147,7 @@ async def get_server(server_id: str):
 
 
 @router.put("/{server_id}")
-async def update_server(server_id: str, payload: UpdateServerRequest, current_user: User = Depends(get_current_user)):
+async def update_server(server_id: str, payload: UpdateServerRequest):
     server = await Server.find_one(Server.server_id == server_id)
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
@@ -158,12 +156,12 @@ async def update_server(server_id: str, payload: UpdateServerRequest, current_us
     if update_data:
         await server.set(update_data)
 
-    logger.info(f"Server {server_id} updated by {current_user.email}")
+    logger.info(f"Server {server_id} updated by an internal service")
     return success_response(data=server.dict(), message=f"Server '{server_id}' updated successfully")
 
 
 @router.delete("/{server_id}")
-async def delete_server(server_id: str, current_user: User = Depends(get_current_user)):
+async def delete_server(server_id: str):
     server = await Server.find_one(Server.server_id == server_id)
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
@@ -171,5 +169,5 @@ async def delete_server(server_id: str, current_user: User = Depends(get_current
     await server.delete()
     # Clean associated metrics
     await Metric.find(Metric.server_id == server_id).delete()
-    logger.info(f"Server {server_id} deleted by {current_user.email}")
+    logger.info(f"Server {server_id} deleted by an internal service")
     return success_response(data={"server_id": server_id}, message=f"Server '{server_id}' deleted successfully")

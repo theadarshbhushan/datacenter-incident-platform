@@ -120,8 +120,8 @@ services:
     ports:
       - "3001:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
@@ -150,8 +150,9 @@ services:
       MONGO_DB_NAME: ${MONGO_DB_NAME}
       REDIS_URL: ${REDIS_URL}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      SECRET_KEY: ${SECRET_KEY}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       ML_SERVICE_URL: ${ML_SERVICE_URL}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
     depends_on:
@@ -209,8 +210,11 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: http://localhost:8000
-      VITE_WS_URL: ws://localhost:8000
+      # The browser talks to the Vite dev server, which proxies /api to the backend container,
+      # so the session cookie stays first-party on http://localhost:5173.
+      VITE_API_MODE: ${VITE_API_MODE:-api}
+      VITE_API_URL: ""
+      VITE_PROXY_TARGET: http://dc-backend:8000
     depends_on:
       dc-backend:
         condition: service_healthy

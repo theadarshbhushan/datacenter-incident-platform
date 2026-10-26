@@ -8,13 +8,14 @@ from app.models.server import Server
 from app.models.metric import Metric
 from app.models.incident import Incident
 from app.models.alert import Alert
+from app.models.account import ACCOUNT_MODELS
 
 client: AsyncIOMotorClient = None
 
 
 async def init_db():
     global client
-    logger.info(f"Connecting to MongoDB at {settings.MONGO_URI} [DB: {settings.MONGO_DB_NAME}]...")
+    logger.info(f"Connecting to MongoDB [DB: {settings.MONGO_DB_NAME}]...")  # URI omitted: it contains credentials
     client = AsyncIOMotorClient(settings.MONGO_URI)
     database = client[settings.MONGO_DB_NAME]
     await init_beanie(
@@ -25,8 +26,9 @@ async def init_db():
             Metric,
             Incident,
             Alert,
+            *ACCOUNT_MODELS,
         ],
-        allow_index_dropping=True,
+        allow_index_dropping=False,
     )
     logger.info("Beanie initialized with all models")
 
