@@ -1,134 +1,73 @@
-from typing import Optional
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
-from loguru import logger
-from beanie import PydanticObjectId
+"""Alerts, alert rules, notification settings and the notification delivery log."""
+from typing import Literal, Optional
 
-from app.models.alert import Alert
-from app.websocket.manager import ws_manager
+from fastapi import APIRouter, Depends, Query
+
+from app.core.auth import OrgContext, require_org
+from app.core.errors import not_found
+from app.models.account import WorkspaceAlert
+from app.models.monitoring import AlertRule, Notification
 from app.schemas.response import success_response
+from app.schemas.workspace import AlertActionIn, AlertRuleIn, NotificationSettingsIn
+from app.core.timeutil import iso
+from app.services import alerts as svc
+from app.services.accounts import audit
+from app.services.workspace import ensure_settings
 
-router = APIRouter(prefix="/alerts", tags=["Internal telemetry"])
-
-
-class CreateAlertRequest(BaseModel):
-    server_id: str
-    incident_id: Optional[str] = None
-    severity: str = "medium"
-    message: str
-    anomaly_score: Optional[float] = 0.8
-    recommendation: Optional[str] = ""
+router = APIRouter(tags=["Alerts"])
 
 
-DEFAULT_ALERTS = [
-    {
-        "server_id": "server-03",
-        "incident_id": "INC-1082",
-        "severity": "critical",
-        "message": "Predicted CPU spike outage risk within 18 minutes (87.4% risk probability)",
-        "anomaly_score": 0.94,
-        "recommendation": "Migrate container workloads and ramp up auxiliary cooling fans.",
-        "acknowledged": False,
-    },
-    {
-        "server_id": "server-07",
-        "incident_id": "INC-1081",
-        "severity": "high",
-        "message": "Memory leak detected on Kafka broker node (climbing steadily past 88%)",
-        "anomaly_score": 0.88,
-        "recommendation": "Inspect topic partition buffers and restart consumer pod.",
-        "acknowledged": False,
-    },
-    {
-        "server_id": "server-08",
-        "incident_id": "INC-1080",
-        "severity": "medium",
-        "message": "Thermal elevation past 78°C following GPU batch completion",
-        "anomaly_score": 0.65,
-        "recommendation": "Thermal dissipation nominal; monitor die sensor telemetry.",
-        "acknowledged": True,
-    },
-]
-
-
-async def ensure_seed_alerts():
-    count = await Alert.count()
-    if count == 0:
-        logger.info("Seeding initial VaultWatch alerts...")
-        for a_data in DEFAULT_ALERTS:
-            a = Alert(**a_data)
-            await a.insert()
-
-
-@router.get("")
-async def get_alerts(
-    severity: Optional[str] = Query(None, description="critical/high/medium/low"),
-    acknowledged: Optional[bool] = Query(None, description="True or False"),
-    limit: int = Query(50, ge=1, le=500),
+@router.get("/alerts")
+async def list_alerts(
+    ctx: OrgContext = Depends(require_org()),
+    status: Optional[Literal["active", "acknowledged", "dismissed", "resolved"]] = None,
+    limit: int = Query(default=200, ge=1, le=1000),
 ):
-    await ensure_seed_alerts()
-
-    query = {}
-    if severity:
-        query["severity"] = severity
-    if acknowledged is not None:
-        query["acknowledged"] = acknowledged
-
-    alerts = await Alert.find(query).sort(-Alert.created_at).limit(limit).to_list()
-
-    formatted = []
-    for a in alerts:
-        d = a.dict()
-        d["id"] = str(a.id)
-        d["created_at"] = a.created_at.isoformat()
-        formatted.append(d)
-
-    return success_response(data=formatted, message=f"Retrieved {len(formatted)} alerts")
+    q: dict = {"org_id": ctx.org_id}
+    if status:
+        q["status"] = status
+    rows = await WorkspaceAlert.find(q).sort("-created_at").limit(limit).to_list()
+    return success_response([svc.alert_public(r) for r in rows])
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_alert(payload: CreateAlertRequest):
-    alert = Alert(
-        server_id=payload.server_id,
-        incident_id=payload.incident_id,
-        severity=payload.severity,
-        message=payload.message,
-        anomaly_score=payload.anomaly_score or 0.8,
-        recommendation=payload.recommendation or "",
-        acknowledged=False,
-    )
-    await alert.insert()
-
-    alert_dict = alert.dict()
-    alert_dict["id"] = str(alert.id)
-    alert_dict["created_at"] = alert.created_at.isoformat()
-
-    await ws_manager.broadcast({"type": "alert", "data": alert_dict})
-    logger.info(f"Created alert on {alert.server_id}: {alert.message}")
-
-    return success_response(data=alert_dict, message="Alert generated successfully")
+@router.post("/alerts/{alert_id}/actions")
+async def alert_action(alert_id: str, body: AlertActionIn, ctx: OrgContext = Depends(require_org("alert:act"))):
+    return success_response(await svc.act(ctx.org_id, alert_id, body.type, ctx.user.full_name))
 
 
-@router.patch("/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str):
-    alert = None
-    try:
-        obj_id = PydanticObjectId(alert_id)
-        alert = await Alert.get(obj_id)
-    except Exception:
-        pass
+@router.get("/alert-rules")
+async def list_rules(ctx: OrgContext = Depends(require_org())):
+    await ensure_settings(ctx.org_id)
+    return success_response([svc.rule_public(r) for r in await svc.list_rules(ctx.org_id)])
 
-    if not alert:
-        alert = await Alert.find_one(Alert.incident_id == alert_id)
 
-    if not alert:
-        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found")
+@router.put("/alert-rules/{rule_id}", summary="Create (rule_id = new) or replace an alert rule")
+async def save_rule(rule_id: str, body: AlertRuleIn, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
+    r = await svc.save_rule(ctx.org_id, rule_id, body)
+    await audit(ctx.org_id, ctx.user.full_name, f'Saved alert rule "{r.name}"')
+    return success_response(svc.rule_public(r))
 
-    await alert.set({"acknowledged": True})
 
-    alert_dict = alert.dict()
-    alert_dict["id"] = str(alert.id)
-    alert_dict["created_at"] = alert.created_at.isoformat()
+@router.delete("/alert-rules/{rule_id}")
+async def delete_rule(rule_id: str, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
+    r = await AlertRule.find_one({"_id": rule_id, "org_id": ctx.org_id})
+    if not r:
+        raise not_found("Alert rule not found.")
+    await r.delete()
+    await audit(ctx.org_id, ctx.user.full_name, f'Deleted alert rule "{r.name}"')
+    return success_response(None)
 
-    return success_response(data=alert_dict, message=f"Alert '{alert_id}' acknowledged")
+
+@router.put("/notification-settings")
+async def update_notifications(body: NotificationSettingsIn, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
+    ws = await ensure_settings(ctx.org_id)
+    ws.notification_settings = body.model_dump()
+    await ws.save()
+    await audit(ctx.org_id, ctx.user.full_name, "Updated notification settings")
+    return success_response(ws.notification_settings)
+
+
+@router.get("/notifications", summary="What happened to each notification (sent, failed, not configured...)")
+async def notifications(ctx: OrgContext = Depends(require_org()), limit: int = Query(default=100, ge=1, le=500)):
+    rows = await Notification.find(Notification.org_id == ctx.org_id).sort("-created_at").limit(limit).to_list()
+    return success_response([{"alertId": n.alert_id, "channel": n.channel, "status": n.status, "detail": n.detail, "at": iso(n.created_at)} for n in rows])

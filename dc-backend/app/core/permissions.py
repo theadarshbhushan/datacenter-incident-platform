@@ -11,6 +11,7 @@ PERMISSIONS: Dict[str, List[str]] = {
     "incident:write": ["owner", "admin", "engineer"],
     "infra:manage": ["owner", "admin"],
     "alert:act": ["owner", "admin", "engineer"],
+    "predictions:run": ["owner", "admin", "engineer"],
     "alertRules:manage": ["owner", "admin"],
     "monitoring:manage": ["owner", "admin"],
     "integrations:manage": ["owner", "admin"],

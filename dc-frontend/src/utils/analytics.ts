@@ -1,4 +1,4 @@
-import type { Incident, IncidentCategory, Server, Severity } from '@/types/domain';
+import type { Incident, IncidentCategory, ReportSummary, Server, Severity, Workspace } from '@/types/domain';
 import type { TrendPoint } from '@/components/charts/Charts';
 
 const DAY = 86_400_000;
@@ -91,10 +91,15 @@ export function categoryDistribution(incidents: Incident[]) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: categoryLabels[k], value: v, key: k }));
 }
 
+/** Averages over online servers that report the metric. null when none do (never a made-up 0). */
 export function fleetAverages(servers: Server[]) {
   const online = servers.filter((s) => s.connectivity !== 'offline');
-  const avg = (f: (s: Server) => number) => (online.length ? Math.round(online.reduce((a, s) => a + f(s), 0) / online.length) : 0);
-  return { cpu: avg((s) => s.cpu), memory: avg((s) => s.memory), storage: avg((s) => s.storage), temperature: avg((s) => s.temperature), powerKw: Math.round(servers.reduce((a, s) => a + s.powerW, 0) / 100) / 10 };
+  const avg = (f: (s: Server) => number | null) => {
+    const vals = online.map(f).filter((v): v is number => v !== null && v !== undefined);
+    return vals.length ? Math.round(vals.reduce((a, v) => a + v, 0) / vals.length) : null;
+  };
+  const power = servers.map((s) => s.powerW).filter((v): v is number => v !== null && v !== undefined);
+  return { cpu: avg((s) => s.cpu), memory: avg((s) => s.memory), storage: avg((s) => s.storage), temperature: avg((s) => s.temperature), powerKw: power.length ? Math.round(power.reduce((a, v) => a + v, 0) / 100) / 10 : null };
 }
 
 export const rangePresets = [
@@ -114,4 +119,37 @@ export function rangeBounds(id: RangeId) {
 export function formatRange(from: number, to: number) {
   const f = (t: number) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return `${f(from)} – ${f(to)}`;
+}
+
+function countBy<T>(items: T[], key: (t: T) => string) {
+  const out: Record<string, number> = {};
+  items.forEach((i) => { const k = key(i); out[k] = (out[k] ?? 0) + 1; });
+  return out;
+}
+
+/** Browser-only demo: the same summary GET /reports/summary computes on the server. */
+export function mockReportSummary(ws: Omit<Workspace, "members" | "invitations">, from: number, to: number): ReportSummary {
+  const created = ws.incidents.filter((i) => inRange(i.createdAt, from, to));
+  const overlapping = ws.incidents.filter((i) => new Date(i.createdAt).getTime() <= to && (!i.resolvedAt || new Date(i.resolvedAt).getTime() >= from));
+  const acked = created.filter((i) => i.acknowledgedAt);
+  const daily = [];
+  for (let d = startOfDay(from); d <= to; d += DAY) {
+    const c = countBySeverity(created.filter((i) => { const t = new Date(i.createdAt).getTime(); return t >= d && t < d + DAY; }));
+    daily.push({ date: new Date(d).toISOString().slice(0, 10), ...c, uptime: Math.round(estimatedUptime(overlapping, ws.servers.length, d, Math.min(d + DAY, Date.now())) * 10000) / 100 });
+  }
+  return {
+    from: new Date(from).toISOString(), to: new Date(to).toISOString(), generatedAt: new Date().toISOString(), sample: ws.sample,
+    incidents: {
+      created: created.length, resolved: created.filter((i) => i.resolvedAt).length, activeNow: overlapping.filter((i) => i.status !== 'resolved').length,
+      bySeverity: countBySeverity(created), byCategory: countBy(created, (i) => i.category), byStatus: countBy(created, (i) => i.status),
+      bySource: countBy(created, (i) => i.source), mttrMinutes: mttrMinutes(created),
+      mttaMinutes: acked.length ? Math.round(acked.reduce((a, i) => a + (new Date(i.acknowledgedAt!).getTime() - new Date(i.createdAt).getTime()), 0) / acked.length / 60_000) : null,
+      downtimeMinutes: downtimeMinutes(overlapping, from, to),
+    },
+    uptime: { estimated: estimatedUptime(overlapping, ws.servers.length, from, to), servers: ws.servers.length, definition: 'Server-hours lost to incidents divided by server-hours in the period. Critical incidents count as full outage of their servers, major as 25% degradation, minor as none. This is an estimate from incident records, not a measured availability.' },
+    daily,
+    alerts: { created: ws.alerts.filter((a) => inRange(a.createdAt, from, to)).length, bySeverity: countBy(ws.alerts.filter((a) => inRange(a.createdAt, from, to)), (a) => a.severity), byStatus: countBy(ws.alerts, (a) => a.status) },
+    servers: { total: ws.servers.length, byStatus: countBy(ws.servers, (s) => s.status) },
+    predictions: { current: ws.predictions.length, anomaliesBySeverity: countBy(ws.predictions.filter((p) => p.kind === 'anomaly'), (p) => p.severity), earlyWarningsFlagged: ws.predictions.filter((p) => p.kind === 'early_warning' && p.severity !== 'normal').length },
+  };
 }

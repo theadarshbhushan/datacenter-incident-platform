@@ -27,6 +27,12 @@ export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/** A reading with its unit, or an em dash when the server does not report it. */
+export function reading(value: number | null | undefined, unit = '', digits = 0): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${digits ? value.toFixed(digits) : Math.round(value)}${unit}`;
+}
+
 export function pct(value: number, digits = 0): string {
   return `${(value * 100).toFixed(digits)}%`;
 }

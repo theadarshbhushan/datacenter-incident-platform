@@ -67,7 +67,7 @@ export function IncidentTrendChart({ data, height = 220 }: { data: TrendPoint[];
 }
 
 export function AreaMetricChart({ data, height = 220, color = chartColors.brand, unit = '%', name = 'Value', domain = [0, 100] }: {
-  data: { label: string; value: number }[]; height?: number; color?: string; unit?: string; name?: string; domain?: [number, number | 'auto'];
+  data: { label: string; value: number | null }[]; height?: number; color?: string; unit?: string; name?: string; domain?: [number, number | 'auto'];
 }) {
   const id = `g-${color.replace('#', '')}-${name.replace(/\W/g, '')}`;
   return (
@@ -92,7 +92,7 @@ export function AreaMetricChart({ data, height = 220, color = chartColors.brand,
 }
 
 export function LineMetricChart({ data, height = 200, color = chartColors.brand, unit = '%', name = 'Value', domain }: {
-  data: { label: string; value: number }[]; height?: number; color?: string; unit?: string; name?: string; domain?: [number | 'auto', number | 'auto'];
+  data: { label: string; value: number | null }[]; height?: number; color?: string; unit?: string; name?: string; domain?: [number | 'auto', number | 'auto'];
 }) {
   return (
     <div style={{ height }} role="img" aria-label={`${name} over time`}>

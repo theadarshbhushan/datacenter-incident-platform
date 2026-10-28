@@ -5,48 +5,20 @@ import {
   RotateCcw, Server as ServerIcon, Sparkles, UserCheck, Wrench,
 } from 'lucide-react';
 import { Breadcrumbs } from '@/components/layout/PageHeader';
-import { Badge, Button, Card, CardHeader, EmptyState, HealthBadge, Menu, SampleBadge, Select, SeverityBadge, StatusBadge, Tabs, Textarea } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, EmptyState, HealthBadge, Input, Menu, SampleBadge, Select, SeverityBadge, StatusBadge, Tabs, Textarea } from '@/components/ui';
 import { LineMetricChart, chartColors } from '@/components/charts/Charts';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
-import { mulberry32, hashString } from '@/utils/random';
-import { durationLabel, formatDateTime, timeAgo, pct } from '@/utils/format';
+import { api, errorMessage } from '@/services/api';
+import { seriesFor } from '@/hooks/useMetrics';
+import { durationLabel, formatDateTime, timeAgo, pct, reading } from '@/utils/format';
 import { categoryLabels } from '@/utils/analytics';
-import type { Incident, Server, TimelineEvent } from '@/types/domain';
+import type { IncidentContext, TimelineEvent } from '@/types/domain';
 import { ResolveDialog, useIncidentActions } from './Incidents';
 import NotFound from './NotFound';
 
 type Tab = 'overview' | 'metrics' | 'logs' | 'ai' | 'history';
-
-function metricSeries(seed: string, base: number, points: number, stepMin: number, spread: number, endAt: number) {
-  const rand = mulberry32(hashString(seed));
-  const out: { label: string; value: number }[] = [];
-  for (let i = points - 1; i >= 0; i--) {
-    const t = endAt - i * stepMin * 60_000;
-    const ramp = (points - i) / points;
-    const v = base * (0.65 + 0.35 * ramp) + (rand() - 0.5) * spread;
-    out.push({ label: new Date(t).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }), value: Math.max(1, Math.min(100, Math.round(v * 10) / 10)) });
-  }
-  return out;
-}
-
-function sampleLogs(inc: Incident, server: Server | undefined) {
-  const host = server?.hostname ?? 'unknown-host';
-  const start = new Date(inc.createdAt).getTime();
-  const t = (min: number) => new Date(start + min * 60_000).toISOString().replace('T', ' ').slice(0, 19);
-  const byCat: Record<string, [string, string][]> = {
-    thermal: [['WARN', `ipmi: inlet temperature ${server?.temperature ?? 78}C exceeds warning threshold 75C`], ['WARN', 'kernel: CPU0: Core temperature above threshold, cpu clock throttled'], ['INFO', 'bmc: fan profile changed to performance'], ['ERROR', 'kernel: CPU1: Package temperature above threshold']],
-    software: [['WARN', 'jvm: heap usage 91% after full GC'], ['WARN', 'broker: consumer lag 48,210 on partition 7'], ['ERROR', 'jvm: GC pause 1.4s exceeds SLO'], ['INFO', 'deploy: consumer-client v3.4.1 rollout complete']],
-    power: [['ERROR', 'bmc: PSU1 status: failure detected'], ['WARN', 'bmc: redundancy lost on power supply'], ['ERROR', 'healthcheck: 3 consecutive probe failures'], ['INFO', 'oob: management controller reachable']],
-    network: [['WARN', 'switch: Eth1/49 CRC errors 240/h'], ['WARN', 'switch: optic RX power -9.8 dBm below threshold'], ['ERROR', 'switch: Eth1/49 link flap detected'], ['INFO', 'lacp: traffic rebalanced to Eth1/50']],
-    hardware: [['WARN', 'bmc: Fan3 reading 0 RPM'], ['INFO', 'bmc: remaining fans compensating at 85%']],
-    storage: [['WARN', 'smartd: reallocated sector count increased to 112'], ['ERROR', 'md0: write latency p99 41ms'], ['INFO', 'md0: rebuild started on /dev/sdc']],
-    capacity: [['WARN', 'scheduler: vCPU allocation 85% of pool'], ['INFO', 'scheduler: 12 pending placements']],
-  };
-  const lines = byCat[inc.category] ?? [];
-  return lines.map(([level, msg], i) => ({ at: t(i * 2 - 3), level, host, msg }));
-}
 
 const eventIcon: Record<TimelineEvent['type'], ReactNode> = {
   created: <AlertTriangle className="h-3.5 w-3.5" />, assigned: <UserCheck className="h-3.5 w-3.5" />, status: <CircleDot className="h-3.5 w-3.5" />,
@@ -100,15 +72,18 @@ export default function IncidentDetail() {
   const rack = inc ? ws.racks.find((r) => r.id === inc.rackId) : undefined;
   const dc = inc ? ws.dataCenters.find((d) => d.id === inc.dcId) : undefined;
   const endAt = inc?.resolvedAt ? new Date(inc.resolvedAt).getTime() : Date.now();
-  const win = { '1h': [13, 5], '6h': [25, 15], '24h': [25, 60] }[metricWindow] as [number, number];
-  const metrics = useMemo(() => {
-    if (!inc || !primary) return null;
-    return {
-      cpu: metricSeries(inc.id + 'cpu' + metricWindow, primary.cpu, win[0], win[1], 10, endAt),
-      mem: metricSeries(inc.id + 'mem' + metricWindow, primary.memory, win[0], win[1], 6, endAt),
-      net: metricSeries(inc.id + 'net' + metricWindow, 32, win[0], win[1], 14, endAt),
-    };
-  }, [inc, primary, metricWindow, endAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [ctx, setCtx] = useState<IncidentContext | null>(null);
+  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [cause, setCause] = useState('');
+  useEffect(() => {
+    if (!inc) return;
+    let live = true;
+    api.getIncidentContext(inc.id, metricWindow)
+      .then((c) => { if (live) { setCtx(c); setCtxError(null); } })
+      .catch((e) => { if (live) setCtxError(errorMessage(e, 'Could not load metrics for this incident.')); });
+    return () => { live = false; };
+  }, [inc?.id, inc?.updatedAt, metricWindow]); // eslint-disable-line react-hooks/exhaustive-deps
+  const metrics = useMemo(() => (ctx?.metrics ? { cpu: seriesFor(ctx.metrics, 'cpu'), mem: seriesFor(ctx.metrics, 'memory'), temp: seriesFor(ctx.metrics, 'temperature'), net: seriesFor(ctx.metrics, 'network') } : null), [ctx]);
 
   if (!inc) return <NotFound inApp title="Incident not found" message={`We couldn't find ${incidentId} in this organization. It may belong to another organization or have an incorrect ID.`} />;
 
@@ -116,7 +91,8 @@ export default function IncidentDetail() {
   const resolved = inc.status === 'resolved';
   const duration = durationLabel(endAt - new Date(inc.createdAt).getTime());
   const assignable = ws.members.filter((m) => m.role !== 'viewer');
-  const logs = ws.sample ? sampleLogs(inc, primary) : [];
+  const logs = ctx?.logs.lines ?? [];
+  const last = (d: { value: number | null }[]) => [...d].reverse().find((p) => p.value !== null)?.value ?? null;
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview' },
@@ -126,36 +102,68 @@ export default function IncidentDetail() {
     { id: 'history' as const, label: 'Action History', count: inc.timeline.length },
   ];
 
-  const MetricTile = ({ icon, label, value, data, color }: { icon: ReactNode; label: string; value: string; data: { label: string; value: number }[]; color: string }) => (
+  const MetricTile = ({ icon, label, unit, data, color, domain }: { icon: ReactNode; label: string; unit: string; data: { label: string; value: number | null }[]; color: string; domain?: [number | 'auto', number | 'auto'] }) => (
     <div className="rounded-xl border border-line p-3.5">
       <p className="flex items-center gap-1.5 text-xs text-ink-muted">{icon}{label}</p>
-      <p className="mt-1 text-xl font-bold text-ink">{value}</p>
-      <LineMetricChart data={data} height={120} color={color} name={label} domain={[0, 100]} />
+      <p className="mt-1 text-xl font-bold text-ink">{reading(last(data), unit, unit === '%' ? 0 : 1)}</p>
+      {data.some((p) => p.value !== null) ? <LineMetricChart data={data} height={120} color={color} name={label} unit={unit} domain={domain ?? [0, 100]} /> : <p className="py-10 text-center text-xs text-ink-muted">Not reported</p>}
     </div>
   );
 
-  const metricsPanel = metrics ? (
-    <div className="grid gap-3 md:grid-cols-3">
-      <MetricTile icon={<Cpu className="h-3.5 w-3.5" />} label="CPU Usage" value={`${metrics.cpu.at(-1)!.value}%`} data={metrics.cpu} color={chartColors.critical} />
-      <MetricTile icon={<MemoryStick className="h-3.5 w-3.5" />} label="Memory Usage" value={`${metrics.mem.at(-1)!.value}%`} data={metrics.mem} color={chartColors.brand} />
-      <MetricTile icon={<Network className="h-3.5 w-3.5" />} label="Network I/O (MB/s)" value={`${metrics.net.at(-1)!.value} MB/s`} data={metrics.net} color={chartColors.brand} />
-    </div>
-  ) : (
+  const metricsPanel = !primary ? (
     <EmptyState icon={<ServerIcon className="h-5 w-5" />} title="No server linked" description="This incident isn't linked to a monitored server, so there are no metrics to show." />
+  ) : ctxError ? (
+    <EmptyState title="Could not load metrics" description={ctxError} />
+  ) : !metrics ? (
+    <p className="py-10 text-center text-sm text-ink-muted">Loading metrics…</p>
+  ) : !ctx?.metrics?.points.length ? (
+    <EmptyState icon={<ServerIcon className="h-5 w-5" />} title="No telemetry in this window" description={`${primary.hostname} sent no readings in this period${inc.resolvedAt ? ' before the incident was resolved' : ''}.`} />
+  ) : (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <MetricTile icon={<Cpu className="h-3.5 w-3.5" />} label="CPU Usage" unit="%" data={metrics.cpu} color={chartColors.critical} />
+      <MetricTile icon={<MemoryStick className="h-3.5 w-3.5" />} label="Memory Usage" unit="%" data={metrics.mem} color={chartColors.brand} />
+      <MetricTile icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Temperature" unit="°C" data={metrics.temp} color={chartColors.major} domain={[0, 'auto']} />
+      <MetricTile icon={<Network className="h-3.5 w-3.5" />} label="Network (Mb/s)" unit=" Mb/s" data={metrics.net} color={chartColors.brand} domain={[0, 'auto']} />
+    </div>
   );
+  const status = inc.analysis.rootCauseStatus ?? (inc.analysis.generatedBy === 'sample' ? 'suspected' : 'unknown');
 
   const aiPanel = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="violet"><Bot className="h-3 w-3" /> AI analysis</Badge>
-        {inc.analysis.generatedBy === 'sample' && <SampleBadge label="Sample analysis" />}
+        <Badge tone="violet"><Bot className="h-3 w-3" /> Root-cause assistance</Badge>
+        {inc.analysis.generatedBy === 'sample' ? <SampleBadge label="Sample analysis" /> : <Badge tone="neutral">Rule-based, from telemetry and history</Badge>}
+        <Badge tone={status === 'confirmed' ? 'healthy' : status === 'suspected' ? 'warning' : 'neutral'}>{status === 'confirmed' ? 'Confirmed cause' : status === 'suspected' ? 'Suspected cause' : 'No cause suggested'}</Badge>
       </div>
       <p className="text-sm leading-6 text-ink">{inc.analysis.summary}</p>
       <div className="rounded-xl border border-violet-line bg-violet-bg/50 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet">Probable root cause</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-violet">{status === 'confirmed' ? 'Confirmed root cause' : 'Suspected root cause'}</p>
         <p className="mt-1 text-sm font-medium text-ink">{inc.analysis.rootCause}</p>
-        <p className="mt-2 text-xs text-ink-muted">Analysis confidence: <span className="font-medium text-ink">{pct(inc.analysis.rootCauseConfidence)}</span>. This is how sure the model is about the cause, not the chance the incident recurs.</p>
+        <p className="mt-2 text-xs text-ink-muted">
+          {status === 'confirmed'
+            ? `Confirmed by ${inc.analysis.confirmedBy ?? 'a teammate'}${inc.analysis.confirmedAt ? ` ${timeAgo(inc.analysis.confirmedAt)}` : ''}.`
+            : 'A suggestion from the evidence below, not a diagnosis. Verify it before acting, then confirm or correct it.'}
+          {inc.analysis.evidenceStrength && inc.analysis.evidenceStrength !== 'none' && ` Evidence: ${inc.analysis.evidenceStrength}.`}
+          {inc.analysis.generatedBy === 'sample' && inc.analysis.rootCauseConfidence !== undefined && ` Sample confidence value: ${pct(inc.analysis.rootCauseConfidence)} (illustrative).`}
+        </p>
       </div>
+      {!!inc.analysis.evidence?.length && (
+        <div>
+          <p className="mb-2 text-sm font-semibold text-ink">Evidence</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-ink">{inc.analysis.evidence.map((e) => <li key={e}>{e}</li>)}</ul>
+        </div>
+      )}
+      {canWrite && status !== 'confirmed' && (
+        <div className="rounded-xl border border-line p-4">
+          <label htmlFor="cause" className="mb-1.5 block text-sm font-medium text-ink">Confirm the root cause</label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input id="cause" value={cause} maxLength={500} placeholder={status === 'suspected' ? inc.analysis.rootCause : 'What actually caused it?'} onChange={(e) => setCause(e.target.value)} />
+            <Button size="sm" disabled={(cause.trim() || (status === 'suspected' ? inc.analysis.rootCause : '')).length < 3}
+              onClick={async () => { if (await run(inc, { type: 'confirm_root_cause', rootCause: cause.trim() || inc.analysis.rootCause }, 'Root cause confirmed')) setCause(''); }}>Confirm</Button>
+            {inc.analysis.generatedBy !== 'sample' && <Button size="sm" variant="secondary" onClick={() => void run(inc, { type: 'refresh_analysis' }, 'Analysis refreshed')}>Refresh from telemetry</Button>}
+          </div>
+        </div>
+      )}
       <div>
         <p className="mb-2 text-sm font-semibold text-ink">Contributing factors</p>
         <ul className="space-y-2">
@@ -163,7 +171,7 @@ export default function IncidentDetail() {
             <li key={f.label} className="flex items-center gap-3 text-sm">
               <span className="w-40 shrink-0 text-ink-muted">{f.label}</span>
               <span className="h-2 flex-1 rounded-full bg-line"><span className="block h-2 rounded-full bg-violet" style={{ width: `${f.weight * 100}%` }} /></span>
-              <span className="w-10 text-right font-medium text-ink">{pct(f.weight)}</span>
+              <span className="w-24 text-right font-medium text-ink" title="Anomaly score of this metric (percentile, not a probability)">{f.value ?? pct(f.weight)}</span>
             </li>
           ))}
         </ul>
@@ -272,7 +280,7 @@ export default function IncidentDetail() {
                 <Link key={s.id} to={`/app/infrastructure?server=${s.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 hover:border-line-strong">
                   <span>
                     <span className="block font-mono text-sm text-ink">{s.hostname}</span>
-                    <span className="block text-xs text-ink-muted">{s.role} · {s.ip} · CPU {s.cpu}% · {s.temperature}°C</span>
+                    <span className="block text-xs text-ink-muted">{s.role} · {s.ip} · CPU {reading(s.cpu, '%')} · {reading(s.temperature, '°C')}</span>
                   </span>
                   <HealthBadge status={s.status} />
                 </Link>
@@ -283,7 +291,8 @@ export default function IncidentDetail() {
             <CardHeader title="AI Summary" action={<button onClick={() => setTab('ai')} className="text-sm font-medium text-brand hover:underline">Full analysis</button>} />
             <div className="p-5">
               <p className="text-sm text-ink">{inc.analysis.summary}</p>
-              <p className="mt-3 text-sm"><span className="text-ink-muted">Probable root cause: </span><span className="font-medium text-ink">{inc.analysis.rootCause}</span></p>
+              <p className="mt-3 text-sm"><span className="text-ink-muted">{status === 'confirmed' ? 'Confirmed root cause: ' : 'Suspected root cause: '}</span><span className="font-medium text-ink">{inc.analysis.rootCause}</span></p>
+              {!!ctx?.alerts.length && <p className="mt-3 text-xs text-ink-muted">Correlated alerts: {ctx.alerts.slice(0, 3).map((a) => a.title).join('; ')}{ctx.alerts.length > 3 ? ` and ${ctx.alerts.length - 3} more` : ''}</p>}
               {inc.analysis.generatedBy === 'sample' && <SampleBadge label="Sample analysis" className="mt-3" />}
             </div>
           </Card>
@@ -298,7 +307,7 @@ export default function IncidentDetail() {
 
       {tab === 'logs' && (
         <Card>
-          <CardHeader title="Logs" description="Log lines correlated with this incident" action={ws.sample && <SampleBadge label="Sample logs" />} />
+          <CardHeader title="Logs" description="Log lines correlated with this incident" action={logs.length > 0 && <SampleBadge label="Sample logs" />} />
           <div className="p-5">
             {logs.length ? (
               <pre className="overflow-x-auto rounded-xl bg-[#0F1A14] p-4 font-mono text-xs leading-6 text-[#D6E4DA]">

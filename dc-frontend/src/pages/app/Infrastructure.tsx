@@ -8,7 +8,8 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import type { HealthStatus, Rack } from '@/types/domain';
 import type { ReactNode } from 'react';
 import { cn } from '@/utils/cn';
-import { pct, timeAgo } from '@/utils/format';
+import { reading, timeAgo } from '@/utils/format';
+import { fleetAverages } from '@/utils/analytics';
 
 type View = 'layout' | 'rack' | 'server';
 
@@ -20,16 +21,19 @@ const statusRing: Record<HealthStatus, string> = {
 };
 const ledColor: Record<HealthStatus, string> = { healthy: 'bg-brand', warning: 'bg-warning', critical: 'bg-critical', offline: 'bg-ink-faint' };
 
-function Meter({ label, value, max = 100, unit = '%', warn = 75, crit = 90, icon }: { label: string; value: number; max?: number; unit?: string; warn?: number; crit?: number; icon?: ReactNode }) {
-  const ratio = Math.min(1, value / max);
-  const color = value >= crit ? 'bg-critical' : value >= warn ? 'bg-warning' : 'bg-brand';
+function Meter({ label, value, max = 100, unit = '%', warn = 75, crit = 90, icon }: { label: string; value: number | null; max?: number; unit?: string; warn?: number; crit?: number; icon?: ReactNode }) {
+  const v = value ?? 0;
+  const ratio = Math.min(1, v / max);
+  const color = value === null ? 'bg-line' : v >= crit ? 'bg-critical' : v >= warn ? 'bg-warning' : 'bg-brand';
   return (
     <div>
-      <div className="flex items-center justify-between text-xs"><span className="flex items-center gap-1.5 text-ink-muted">{icon}{label}</span><span className="font-medium text-ink">{value}{unit}</span></div>
+      <div className="flex items-center justify-between text-xs"><span className="flex items-center gap-1.5 text-ink-muted">{icon}{label}</span><span className="font-medium text-ink" title={value === null ? 'Not reported by this server' : undefined}>{reading(value, unit, unit === ' ms' ? 1 : 0)}</span></div>
       <div className="mt-1 h-1.5 rounded-full bg-line"><div className={cn('h-1.5 rounded-full', color)} style={{ width: `${ratio * 100}%` }} /></div>
     </div>
   );
 }
+
+const maxOf = (vals: (number | null)[]) => { const v = vals.filter((x): x is number => x !== null); return v.length ? Math.max(...v) : null; };
 
 export default function Infrastructure() {
   const { workspace } = useWorkspace();
@@ -85,9 +89,9 @@ export default function Infrastructure() {
         </div>
         <dl className="mt-4 divide-y divide-line text-sm">
           {[
-            ['Inlet temperature', `${rack.inletTemp}°C`],
-            ['Max server temperature', `${Math.max(...rs.map((s) => s.temperature))}°C`],
-            ['Power usage', `${rack.powerKw} kW / ${rack.powerCapacityKw} kW`],
+            ['Inlet temperature', rack.inletTemp === null ? 'Not measured' : `${rack.inletTemp}°C`],
+            ['Max server temperature', reading(maxOf(rs.map((s) => s.temperature)), '°C')],
+            ['Power usage', `${rack.powerKw === null ? '—' : `${rack.powerKw} kW`} / ${rack.powerCapacityKw} kW`],
             ['Active servers', `${online} / ${rs.length}`],
             ['Open incidents', String(ws.incidents.filter((i) => i.rackId === rack.id && i.status !== 'resolved').length)],
           ].map(([k, v]) => <div key={k} className="flex justify-between py-2"><dt className="text-ink-muted">{k}</dt><dd className="font-medium text-ink">{v}</dd></div>)}
@@ -126,8 +130,8 @@ export default function Infrastructure() {
         {[
           { label: 'Racks', value: racks.length, icon: <Gauge className="h-4 w-4" /> },
           { label: 'Servers online', value: `${servers.filter((s) => s.connectivity !== 'offline').length}/${servers.length}`, icon: <Wifi className="h-4 w-4" /> },
-          { label: 'Power draw', value: `${Math.round(racks.reduce((a, r) => a + r.powerKw, 0) * 10) / 10} kW`, icon: <Zap className="h-4 w-4" /> },
-          { label: 'Avg temperature', value: `${Math.round(servers.reduce((a, s) => a + s.temperature, 0) / Math.max(1, servers.length))}°C`, icon: <Thermometer className="h-4 w-4" /> },
+          { label: 'Power draw', value: racks.some((r) => r.powerKw !== null) ? `${Math.round(racks.reduce((a, r) => a + (r.powerKw ?? 0), 0) * 10) / 10} kW` : '—', icon: <Zap className="h-4 w-4" /> },
+          { label: 'Avg temperature', value: reading(fleetAverages(servers).temperature, '°C'), icon: <Thermometer className="h-4 w-4" /> },
         ].map((s) => (
           <div key={s.label} className="card flex items-center gap-3 p-3.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-brand">{s.icon}</span>
@@ -162,7 +166,7 @@ export default function Infrastructure() {
                               </div>
                             ))}
                           </div>
-                          <p className="mt-2 text-[11px] text-ink-muted">{r.powerKw} kW · {r.inletTemp}°C inlet</p>
+                          <p className="mt-2 text-[11px] text-ink-muted">{r.powerKw === null ? 'Power not reported' : `${r.powerKw} kW`} · {r.maxTemp == null ? 'no temp' : `max ${r.maxTemp}°C`}</p>
                           <p className={cn('text-[11px] font-medium', r.status === 'healthy' ? 'text-brand-700' : r.status === 'warning' ? 'text-warning' : 'text-critical')}>
                             {r.status === 'healthy' ? 'Normal' : r.status === 'warning' ? 'Needs attention' : 'Critical'}
                           </p>
@@ -232,11 +236,11 @@ export default function Infrastructure() {
                       <td className="td"><button className="font-mono text-xs hover:text-brand" onClick={(e) => { e.stopPropagation(); update({ server: s.id }); }}>{s.hostname}</button><span className="block text-[11px] text-ink-muted">{s.ip}</span></td>
                       <td className="td">{ws.racks.find((r) => r.id === s.rackId)?.label}</td>
                       <td className="td text-ink-muted">{s.role}</td>
-                      <td className={cn('td', s.cpu >= 90 && 'font-semibold text-critical')}>{s.cpu}%</td>
-                      <td className={cn('td', s.memory >= 90 && 'font-semibold text-critical')}>{s.memory}%</td>
-                      <td className={cn('td', s.temperature >= 80 && 'font-semibold text-critical')}>{s.temperature}°C</td>
-                      <td className="td">{s.powerW} W</td>
-                      <td className="td">{s.connectivity === 'offline' ? <span className="flex items-center gap-1 text-ink-muted"><WifiOff className="h-3.5 w-3.5" />Offline</span> : <span className={cn('flex items-center gap-1', s.connectivity === 'degraded' ? 'text-warning' : 'text-brand-700')}><Wifi className="h-3.5 w-3.5" />{s.connectivity === 'degraded' ? 'Degraded' : `${s.networkLatencyMs} ms`}</span>}</td>
+                      <td className={cn('td', (s.cpu ?? 0) >= 90 && 'font-semibold text-critical')}>{reading(s.cpu, '%')}</td>
+                      <td className={cn('td', (s.memory ?? 0) >= 90 && 'font-semibold text-critical')}>{reading(s.memory, '%')}</td>
+                      <td className={cn('td', (s.temperature ?? 0) >= 80 && 'font-semibold text-critical')}>{reading(s.temperature, '°C')}</td>
+                      <td className="td">{reading(s.powerW, ' W')}</td>
+                      <td className="td">{s.connectivity === 'offline' ? <span className="flex items-center gap-1 text-ink-muted"><WifiOff className="h-3.5 w-3.5" />Offline</span> : <span className={cn('flex items-center gap-1', s.connectivity === 'degraded' ? 'text-warning' : 'text-brand-700')}><Wifi className="h-3.5 w-3.5" />{s.connectivity === 'degraded' ? 'Degraded' : s.networkLatencyMs === null ? 'Online' : `${s.networkLatencyMs} ms`}</span>}</td>
                       <td className="td"><HealthBadge status={s.status} /></td>
                     </tr>
                   ))}
@@ -253,8 +257,9 @@ export default function Infrastructure() {
             <div className="flex flex-wrap items-center gap-2">
               <HealthBadge status={paramServer.status} />
               <Badge tone={healthTone[paramServer.status]}>Rack {ws.racks.find((r) => r.id === paramServer.rackId)?.label} · U{paramServer.slot}</Badge>
-              <Badge>Uptime {paramServer.uptimeDays} days</Badge>
-              {ws.sample && <SampleBadge />}
+              <Badge>{paramServer.source === 'agent' ? `Reporting for ${paramServer.uptimeDays} days` : `Uptime ${paramServer.uptimeDays} days`}</Badge>
+              {paramServer.lastSeenAt && <Badge tone="neutral">Last reading {timeAgo(paramServer.lastSeenAt)}</Badge>}
+              {(paramServer.sample ?? ws.sample) && <SampleBadge />}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Meter label="CPU" value={paramServer.cpu} icon={<Cpu className="h-3.5 w-3.5" />} />
@@ -275,13 +280,13 @@ export default function Infrastructure() {
               )}
             </div>
             {(() => {
-              const p = ws.predictions.find((x) => x.serverId === paramServer.id);
+              const p = ws.predictions.find((x) => x.serverId === paramServer.id && x.kind === 'anomaly');
               return p ? (
                 <Link to={`/app/predictions/${p.id}`} className="flex items-center justify-between rounded-xl border border-line p-3 hover:border-line-strong">
-                  <span className="text-sm"><span className="text-ink-muted">Predicted risk: </span><span className="font-medium text-ink">{p.type}</span> <span className="text-ink-muted">in {p.horizon}</span></span>
-                  <span className="text-sm font-bold text-ink">{pct(p.probability)} <span className="text-xs font-normal text-ink-muted">(confidence {pct(p.confidence)})</span></span>
+                  <span className="text-sm"><span className="text-ink-muted">Model assessment: </span><span className="font-medium text-ink">{p.severity === 'normal' ? 'Normal' : `${p.type} (${p.severity})`}</span></span>
+                  <span className="text-sm font-bold text-ink">{p.anomalyScore === null ? '—' : p.anomalyScore.toFixed(2)} <span className="text-xs font-normal text-ink-muted">anomaly score · {p.confidence} confidence</span></span>
                 </Link>
-              ) : null;
+              ) : <p className="text-sm text-ink-muted">{paramServer.assessment === 'insufficient_data' ? 'Not enough history yet: the model needs at least 4 hours of readings.' : 'No model assessment yet.'}</p>;
             })()}
           </div>
         ) : (

@@ -1,0 +1,4 @@
+# Training and evaluation (python -m app.ml.training.train). Not needed to run the API.
+-r requirements.txt
+pandas==2.2.3
+scikit-learn==1.6.1

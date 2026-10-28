@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, ChevronRight, Clock4, Server, ShieldCheck, Zap } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -10,29 +10,13 @@ import { LivePill } from '@/components/app/LivePill';
 import { WorkspaceEmpty } from '@/components/app/WorkspaceEmpty';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
-import { resourceSeries } from '@/data/demo';
-import { activeIncidents, countBySeverity, dailyTrend, estimatedUptime, fleetAverages, rangeBounds, type RangeId } from '@/utils/analytics';
+import { seriesFor, useMetrics } from '@/hooks/useMetrics';
+import { activeIncidents, countBySeverity, dailyTrend, estimatedUptime, rangeBounds, type RangeId } from '@/utils/analytics';
 import { timeAgo } from '@/utils/format';
-import type { Workspace } from '@/types/domain';
 
 type Metric = 'cpu' | 'memory' | 'network' | 'storage';
 const metricLabels: Record<Metric, string> = { cpu: 'CPU', memory: 'Memory', network: 'Network', storage: 'Storage' };
-
-function useResourceSeries(ws: Workspace, metric: Metric) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTick((x) => x + 1), 10_000);
-    return () => clearInterval(t);
-  }, []);
-  return useMemo(() => {
-    const avg = fleetAverages(ws.servers);
-    const series = resourceSeries(metric, 25, 3_600_000, 11 + tick, Date.now());
-    // Anchor the sample curve to the fleet's current average so the chart and cards agree.
-    const target = metric === 'network' ? 45 : avg[metric];
-    const last = series[series.length - 1]!.value;
-    return series.map((p) => ({ label: p.label, value: Math.max(1, Math.min(100, Math.round((p.value + (target - last)) * 10) / 10)) }));
-  }, [ws.servers, metric, tick]);
-}
+const metricUnits: Record<Metric, string> = { cpu: '%', memory: '%', network: ' Mb/s', storage: '%' };
 
 export default function Dashboard() {
   const { workspace } = useWorkspace();
@@ -41,7 +25,9 @@ export default function Dashboard() {
   const [metric, setMetric] = useState<Metric>('cpu');
   const ws = workspace!;
   const { from, to } = rangeBounds(range);
-  const series = useResourceSeries(ws, metric);
+  const hasInfra = ws.servers.length > 0;
+  const fleet = useMetrics(null, '24h', [metric], hasInfra);
+  const series = seriesFor(fleet.data, metric);
 
   const stats = useMemo(() => {
     const active = activeIncidents(ws.incidents);
@@ -52,12 +38,12 @@ export default function Dashboard() {
     const span = to - from;
     const uptime = estimatedUptime(ws.incidents, ws.servers.length, from, to);
     const prevUptime = estimatedUptime(ws.incidents, ws.servers.length, from - span, from);
-    const highRisk = ws.predictions.filter((p) => p.probability >= 0.7 && (p.horizon === '6h' || p.horizon === '24h'));
+    // Servers the model flags now (anomaly) or expects to surge within the hour (experimental early warning).
+    const highRisk = [...new Set(ws.predictions.filter((p) => p.severity !== 'normal').map((p) => p.serverId))];
     const inRange = ws.incidents.filter((i) => { const t = new Date(i.createdAt).getTime(); return t >= from && t <= to; });
     return { active, sev, healthy, warning, critical, uptime, delta: uptime - prevUptime, highRisk, trend: dailyTrend(inRange, from, to), inRange };
   }, [ws, from, to]);
 
-  const hasInfra = ws.servers.length > 0;
   const recent = [...ws.incidents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
 
   return (
@@ -65,7 +51,7 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description={`Real-time overview of data center health, incidents and infrastructure${session?.organization ? ` for ${session.organization.name}` : ''}`}
-        actions={<><RangeSelect value={range} onChange={setRange} />{hasInfra && <LivePill />}{ws.sample && <SampleBadge />}</>}
+        actions={<><RangeSelect value={range} onChange={setRange} />{hasInfra && <LivePill telemetry={ws.telemetry} />}{ws.sample && <SampleBadge />}</>}
       />
 
       {!hasInfra && <div className="mb-6"><WorkspaceEmpty /></div>}
@@ -88,17 +74,17 @@ export default function Dashboard() {
           icon={<ShieldCheck className="h-5 w-5" />} iconTone="bg-brand-100 text-brand"
           value={hasInfra ? `${(stats.uptime * 100).toFixed(2)}%` : '—'} label="Uptime (estimated)"
           footer={hasInfra && (
-            <span className={stats.delta >= 0 ? 'flex items-center gap-1 text-brand-700' : 'flex items-center gap-1 text-critical'}>
-              {stats.delta >= 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-              {stats.delta >= 0 ? '+' : ''}{(stats.delta * 100).toFixed(2)}% vs previous period
+            <span className={stats.delta >= -0.00005 ? 'flex items-center gap-1 text-brand-700' : 'flex items-center gap-1 text-critical'}>
+              {stats.delta >= -0.00005 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+              {stats.delta >= -0.00005 ? '+' : '-'}{Math.abs(stats.delta * 100).toFixed(2)}% vs previous period
             </span>
           )}
         />
         <StatCard
           to="/app/predictions"
           icon={<Zap className="h-5 w-5" />} iconTone="bg-orange-bg text-orange"
-          value={stats.highRisk.length} label="Predicted Risk"
-          footer={<StatPill tone={stats.highRisk.length ? 'critical' : 'healthy'}>{stats.highRisk.length ? 'High risk in next 24h' : 'No high-risk assets in next 24h'}</StatPill>}
+          value={stats.highRisk.length} label="Servers flagged by the model"
+          footer={<StatPill tone={stats.highRisk.length ? 'warning' : 'healthy'}>{!ws.model?.ready && !ws.sample ? 'Model not loaded' : stats.highRisk.length ? 'Anomalous now or early warning (1h)' : 'Nothing flagged right now'}</StatPill>}
         />
       </div>
 
@@ -113,11 +99,15 @@ export default function Dashboard() {
         <Card>
           <CardHeader
             title="Server Resource Usage"
-            description={hasInfra ? `Fleet average, last 24 hours${ws.sample ? ' · sample telemetry' : ''}` : undefined}
+            description={hasInfra ? `Fleet average of 5-minute readings, last 24 hours${ws.sample ? ' · sample telemetry' : ''}` : undefined}
             action={<Segmented value={metric} onChange={setMetric} items={(Object.keys(metricLabels) as Metric[]).map((m) => ({ id: m, label: metricLabels[m] }))} />}
           />
           <div className="px-5 pb-5 pt-3">
-            {hasInfra ? <AreaMetricChart data={series} height={250} name={metricLabels[metric]} /> : <EmptyState title="No telemetry yet" description="Connect infrastructure to see resource usage." className="py-14" />}
+            {!hasInfra ? <EmptyState title="No telemetry yet" description="Connect infrastructure to see resource usage." className="py-14" />
+              : fleet.error ? <EmptyState title="Could not load metrics" description={fleet.error} className="py-14" />
+              : fleet.loading && !fleet.data ? <div className="flex h-[250px] items-center justify-center text-sm text-ink-muted">Loading metrics…</div>
+              : series.every((p) => p.value === null) ? <EmptyState title={`No ${metricLabels[metric].toLowerCase()} readings in the last 24 hours`} description="Servers have not reported this metric yet." className="py-14" />
+              : <AreaMetricChart data={series} height={250} name={metricLabels[metric]} unit={metricUnits[metric]} domain={metric === 'network' ? [0, 'auto'] : [0, 100]} />}
           </div>
         </Card>
       </div>

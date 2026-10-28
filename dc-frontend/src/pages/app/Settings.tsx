@@ -36,6 +36,8 @@ function OrganizationSection() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [removingSample, setRemovingSample] = useState(false);
+  const { workspace: ws, reload } = useWorkspace();
   const editable = can('org:manage');
   const save = async () => {
     if (form.name.trim().length < 2) return setErr('Organization name must be at least 2 characters.');
@@ -62,6 +64,18 @@ function OrganizationSection() {
           {editable && <div className="flex justify-end"><Button onClick={save} loading={busy}>Save changes</Button></div>}
         </div>
       </Card>
+      {ws?.sample && can('infra:manage') && (
+        <Card>
+          <CardHeader title="Sample environment" description="Sample servers, telemetry, incidents and model output are labeled everywhere in the app." />
+          <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-ink-muted">Remove every sample row from this organization. Real data is not touched. Sending real telemetry also removes it automatically.</p>
+            <Button variant="outline-danger" onClick={() => setRemovingSample(true)}>Remove sample data</Button>
+          </div>
+        </Card>
+      )}
+      <ConfirmDialog open={removingSample} onClose={() => setRemovingSample(false)} destructive title="Remove the sample environment?" confirmLabel="Remove"
+        description="Sample servers, telemetry, predictions, alerts and incidents are deleted. Settings, team and API keys stay."
+        onConfirm={async () => { try { await api.removeSampleEnvironment(); await reload(); toast.success('Sample data removed'); } catch (e) { toast.error('Could not remove sample data', errorMessage(e)); } }} />
       {isMock && (
         <Card className="border-critical-line">
           <CardHeader title="Demo data" description="Mock mode stores everything in this browser." />

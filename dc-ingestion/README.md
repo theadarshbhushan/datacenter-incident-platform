@@ -1,31 +1,20 @@
-# VaultWatch Ingestion Service
+# VaultWatch telemetry agent
 
-Kafka producer simulating 10 real data center servers with realistic metric patterns.
+`agent.py` sends readings to the backend's `POST /api/v1/telemetry/ingest` with an organization API key.
+It replaced the earlier Kafka producer (the Kafka/Celery pipeline it fed was not organization-scoped and has been removed).
 
-## Quick Start
 ```bash
 cd dc-ingestion
 pip install -r requirements.txt
-python producer.py
+export VAULTWATCH_URL=http://localhost:8000          # Windows PowerShell: $env:VAULTWATCH_URL = "..."
+export VAULTWATCH_API_KEY=vw_live_...                 # VaultWatch -> Integrations -> Create key (scope metrics:write)
+
+python agent.py                       # real metrics of this machine (CPU, memory, disk, network, temperature if exposed)
+python agent.py --rack A01 --datacenter "Mumbai-1"
+python agent.py --simulate 6 --backfill-hours 6 --spike-after-min 10   # simulated fleet, for testing only
 ```
 
-## Servers Simulated
-10 servers across DC-East and DC-West:
-- **Compute**: compute-01, compute-02, app-gateway-01, app-gateway-02
-- **Storage**: cache-redis-01, storage-nas-01
-- **Network**: kafka-broker-01, kafka-broker-02, edge-proxy-01
-- **GPU**: ml-inference-01
-
-## Anomaly Injection
-Random anomalies injected every 80-200 ticks:
-- `cpu_spike`
-- `memory_leak`
-- `disk_failure`
-- `network_anomaly`
-- `thermal_event`
-
-## Configuration
-Controlled via `.env`:
-- `KAFKA_BOOTSTRAP_SERVERS`: Kafka broker addresses (default: `localhost:9092` locally, `kafka:29092` in container)
-- `KAFKA_METRICS_TOPIC`: Kafka target topic (default: `server-metrics`)
-- `SEND_INTERVAL_SECONDS`: Ingestion cadence in seconds (default: `5`)
+- Real mode only sends what the operating system exposes. Missing metrics are left out, never invented.
+- Simulated servers are stored like real ones (the backend cannot tell them apart). Use a separate test organization.
+- The model needs 4 hours of history per server before it scores it; `--backfill-hours` gives simulated servers that history immediately.
+- `docker compose --profile agent up` runs the simulated fleet in a container. A container would report itself rather than the host, so run `agent.py` directly on the machines you want to monitor.

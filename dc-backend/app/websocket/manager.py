@@ -1,13 +1,10 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from fastapi import WebSocket
 from loguru import logger
 
-INTERNAL = "__internal__"
-
-
 class ConnectionManager:
-    """Each connection belongs to one organization (or to internal services). Messages never cross orgs."""
+    """Each connection belongs to one organization. Messages never cross organizations."""
 
     def __init__(self):
         self.active_connections: List[Tuple[WebSocket, str]] = []
@@ -20,11 +17,10 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections = [(ws, s) for ws, s in self.active_connections if ws is not websocket]
 
-    async def broadcast(self, message: Dict[str, Any], org_id: Optional[str] = None):
-        """Send to connections of `org_id`; messages without an org go to internal services only."""
-        target = org_id or INTERNAL
+    async def broadcast(self, message: Dict[str, Any], org_id: str):
+        """Send to the connections of `org_id` only."""
         for ws, scope in list(self.active_connections):
-            if scope != target:
+            if scope != org_id:
                 continue
             try:
                 await ws.send_json(message)

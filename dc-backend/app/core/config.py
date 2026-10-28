@@ -1,33 +1,18 @@
-import socket
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-def is_host_resolvable(hostname: str) -> bool:
-    try:
-        socket.gethostbyname(hostname)
-        return True
-    except Exception:
-        return False
 
 
 class Settings(BaseSettings):
     # App
     PROJECT_NAME: str = "VaultWatch Backend API"
-    VERSION: str = "2.4.0"
+    VERSION: str = "3.0.0"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
 
     # MongoDB
-    MONGO_URI: str = "mongodb://dcadmin:changeme_mongo_password@mongodb:27017/vaultwatch?authSource=admin"
+    MONGO_URI: str = "mongodb://localhost:27017"  # local MongoDB, a compose service, or an Atlas mongodb+srv:// URI
     MONGO_DB_NAME: str = "vaultwatch"
-
-    # Redis / Celery
-    REDIS_URL: str = "redis://redis:6379/0"
-
-    # Kafka
-    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:29092"
-    KAFKA_METRICS_TOPIC: str = "server-metrics"
 
     # Security. SECRET_KEY signs CSRF tokens. Required outside development; in development a random
     # key is generated at startup when it is empty. JWT_* are kept for compatibility and unused by sessions.
@@ -35,9 +20,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-
-    # ML Service
-    ML_SERVICE_URL: str = "http://ml-service:8001"
 
     # Web app / sessions
     FRONTEND_URL: str = "http://localhost:5173"
@@ -49,9 +31,19 @@ class Settings(BaseSettings):
     COOKIE_DOMAIN: str = ""
     TRUST_PROXY_HEADERS: bool = False  # only behind a proxy you control that sets X-Forwarded-For
 
-    # Service-to-service token for the internal telemetry API (legacy /servers, /incidents, ... routes
-    # and the /ws stream). Empty disables those routes. Never expose it to browsers.
-    INTERNAL_API_TOKEN: str = ""
+    # Database migrations (app.migrations) run at startup unless disabled; run them yourself with
+    # `python -m app.migrations upgrade` when several API instances start at once.
+    RUN_MIGRATIONS_ON_STARTUP: bool = True
+
+    # ML: the model bundle is loaded once at startup. Empty = app/ml/artifacts/model_bundle.json.gz
+    ML_MODEL_PATH: str = ""
+
+    # Hours of synthetic history created for the sample environment (needs at least 5 for the model's 4-hour minimum).
+    DEMO_SEED_HOURS: int = 28
+
+    # Notification channels (optional). Without them, alerts are recorded with status "not_configured".
+    SLACK_WEBHOOK_URL: str = ""
+    PAGERDUTY_ROUTING_KEY: str = ""
 
     # Email: "console" logs messages (and keeps them in a dev mailbox in development); "smtp" sends them
     EMAIL_BACKEND: str = "console"
@@ -85,27 +77,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
-
-    @property
-    def get_mongo_uri(self) -> str:
-        uri = self.MONGO_URI
-        if "@mongodb:" in uri and not is_host_resolvable("mongodb"):
-            uri = uri.replace("@mongodb:", "@localhost:")
-        return uri
-
-    @property
-    def get_redis_url(self) -> str:
-        url = self.REDIS_URL
-        if "//redis:" in url and not is_host_resolvable("redis"):
-            url = url.replace("//redis:", "//localhost:")
-        return url
-
-    @property
-    def get_ml_service_url(self) -> str:
-        url = self.ML_SERVICE_URL
-        if "//ml-service:" in url and not is_host_resolvable("ml-service"):
-            url = url.replace("//ml-service:", "//localhost:")
-        return url
 
 
 @lru_cache()

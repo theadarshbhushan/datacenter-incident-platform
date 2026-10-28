@@ -1,0 +1,1611 @@
+{
+  "model_version": "vw-anomaly-20261028-f062be",
+  "trained_at": "2026-10-28T17:22:19Z",
+  "data_fingerprint": "f062bea03c62",
+  "training_seconds": 17.7,
+  "library_versions": {
+    "numpy": "2.4.2",
+    "pandas": "3.0.3",
+    "scikit-learn": "1.9.0"
+  },
+  "data": {
+    "source": "NAB realAWSCloudwatch",
+    "series": {
+      "ec2_cpu_utilization_24ae8d": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4032,
+        "missing_buckets": 0,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 2,
+        "labeled_buckets": 402
+      },
+      "ec2_cpu_utilization_53ea38": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4032,
+        "missing_buckets": 0,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 2,
+        "labeled_buckets": 402
+      },
+      "ec2_cpu_utilization_77c1ef": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4032,
+        "missing_buckets": 0,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 1,
+        "labeled_buckets": 403
+      },
+      "ec2_cpu_utilization_825cc2": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4034,
+        "missing_buckets": 2,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 1,
+        "labeled_buckets": 342
+      },
+      "ec2_cpu_utilization_ac20cd": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4037,
+        "missing_buckets": 5,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 1,
+        "labeled_buckets": 405
+      },
+      "ec2_disk_write_bytes_1ef3de": {
+        "kind": "disk_io",
+        "rows": 4719,
+        "buckets": 4730,
+        "missing_buckets": 12,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 11,
+        "label_windows": 1,
+        "labeled_buckets": 472
+      },
+      "ec2_network_in_257a54": {
+        "kind": "network",
+        "rows": 4032,
+        "buckets": 4034,
+        "missing_buckets": 2,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 1,
+        "labeled_buckets": 402
+      },
+      "rds_cpu_utilization_cc0c53": {
+        "kind": "cpu",
+        "rows": 4032,
+        "buckets": 4033,
+        "missing_buckets": 1,
+        "unparseable_timestamps": 0,
+        "non_numeric_values": 0,
+        "negative_values": 0,
+        "duplicate_timestamps": 0,
+        "label_windows": 2,
+        "labeled_buckets": 403
+      }
+    },
+    "total_buckets": 32964,
+    "label_windows": 11
+  },
+  "features": [
+    "z_level",
+    "z_short",
+    "z_hour",
+    "z_step",
+    "log_volatility"
+  ],
+  "anomaly_detection": {
+    "evaluation": {
+      "protocol": "leave-one-series-out (8 folds); thresholds chosen on the 7 training series only",
+      "point_labels": "a 5-minute bucket is positive if it lies inside a NAB anomaly window",
+      "operating_points": {
+        "f1_optimal": "F1-optimal",
+        "fpr_2pct": "2.0% of normal training buckets above threshold",
+        "fpr_0_5pct": "0.5% of normal training buckets above threshold",
+        "alert_rule_15m": "above the 2% threshold for 3 consecutive buckets and above the 0.5% threshold in at least one (the production alert rule)"
+      },
+      "summary": {
+        "isolation_forest": {
+          "pr_auc_pooled": 0.179,
+          "roc_auc_pooled": 0.5968,
+          "base_rate": 0.0992,
+          "f1_optimal": {
+            "precision": 0.1404,
+            "recall": 0.3924,
+            "f1": 0.2069,
+            "false_positive_rate": 0.26444,
+            "tp": 1268,
+            "fp": 7761,
+            "fn": 1963,
+            "tn": 21588,
+            "windows_detected": 11,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 13.976
+          },
+          "fpr_2pct": {
+            "precision": 0.3591,
+            "recall": 0.1455,
+            "f1": 0.207,
+            "false_positive_rate": 0.02859,
+            "tp": 470,
+            "fp": 839,
+            "fn": 2761,
+            "tn": 28510,
+            "windows_detected": 7,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 2.104
+          },
+          "fpr_0_5pct": {
+            "precision": 0.4163,
+            "recall": 0.0316,
+            "f1": 0.0587,
+            "false_positive_rate": 0.00487,
+            "tp": 102,
+            "fp": 143,
+            "fn": 3129,
+            "tn": 29206,
+            "windows_detected": 7,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 0.787
+          },
+          "alert_rule_15m": {
+            "precision": 0.535,
+            "recall": 0.0331,
+            "f1": 0.0624,
+            "false_positive_rate": 0.00317,
+            "tp": 107,
+            "fp": 93,
+            "fn": 3124,
+            "tn": 29256,
+            "windows_detected": 6,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 0.336
+          }
+        },
+        "robust_zscore": {
+          "pr_auc_pooled": 0.1535,
+          "roc_auc_pooled": 0.5295,
+          "base_rate": 0.0992,
+          "f1_optimal": {
+            "precision": 0.2405,
+            "recall": 0.1919,
+            "f1": 0.2135,
+            "false_positive_rate": 0.06671,
+            "tp": 620,
+            "fp": 1958,
+            "fn": 2611,
+            "tn": 27391,
+            "windows_detected": 11,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 7.673
+          },
+          "fpr_2pct": {
+            "precision": 0.31,
+            "recall": 0.0944,
+            "f1": 0.1447,
+            "false_positive_rate": 0.02314,
+            "tp": 305,
+            "fp": 679,
+            "fn": 2926,
+            "tn": 28670,
+            "windows_detected": 9,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 2.793
+          },
+          "fpr_0_5pct": {
+            "precision": 0.3264,
+            "recall": 0.0291,
+            "f1": 0.0534,
+            "false_positive_rate": 0.00661,
+            "tp": 94,
+            "fp": 194,
+            "fn": 3137,
+            "tn": 29155,
+            "windows_detected": 7,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 0.955
+          },
+          "alert_rule_15m": {
+            "precision": 0.401,
+            "recall": 0.0257,
+            "f1": 0.0483,
+            "false_positive_rate": 0.00423,
+            "tp": 83,
+            "fp": 124,
+            "fn": 3148,
+            "tn": 29225,
+            "windows_detected": 7,
+            "windows_total": 11,
+            "false_alarm_episodes_per_day": 0.628
+          }
+        }
+      },
+      "per_series": [
+        {
+          "series": "ec2_cpu_utilization_24ae8d",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.0581,
+              "recall": 0.1418,
+              "f1": 0.0824,
+              "false_positive_rate": 0.25796,
+              "tp": 57,
+              "fp": 924,
+              "fn": 345,
+              "tn": 2658,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 672,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -8.3,
+                  0.0
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.0769,
+              "recall": 0.01,
+              "f1": 0.0176,
+              "false_positive_rate": 0.0134,
+              "tp": 4,
+              "fp": 48,
+              "fn": 398,
+              "tn": 3534,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 31,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.1333,
+              "recall": 0.005,
+              "f1": 0.0096,
+              "false_positive_rate": 0.00363,
+              "tp": 2,
+              "fp": 13,
+              "fn": 400,
+              "tn": 3569,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 13,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.00112,
+              "tp": 0,
+              "fp": 4,
+              "fn": 402,
+              "tn": 3578,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 4,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.1029,
+              "recall": 0.0174,
+              "f1": 0.0298,
+              "false_positive_rate": 0.01703,
+              "tp": 7,
+              "fp": 61,
+              "fn": 395,
+              "tn": 3521,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 35,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.1522,
+              "recall": 0.0174,
+              "f1": 0.0312,
+              "false_positive_rate": 0.01089,
+              "tp": 7,
+              "fp": 39,
+              "fn": 395,
+              "tn": 3543,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 13,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.0645,
+              "recall": 0.005,
+              "f1": 0.0092,
+              "false_positive_rate": 0.0081,
+              "tp": 2,
+              "fp": 29,
+              "fn": 400,
+              "tn": 3553,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 15,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.1333,
+              "recall": 0.005,
+              "f1": 0.0096,
+              "false_positive_rate": 0.00363,
+              "tp": 2,
+              "fp": 13,
+              "fn": 400,
+              "tn": 3569,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 13,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.2
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_cpu_utilization_53ea38",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.24,
+              "recall": 0.0448,
+              "f1": 0.0755,
+              "false_positive_rate": 0.01591,
+              "tp": 18,
+              "fp": 57,
+              "fn": 384,
+              "tn": 3525,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 40,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  0.5,
+                  0.4
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.0,
+              "tp": 0,
+              "fp": 0,
+              "fn": 402,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 0,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.0,
+              "tp": 0,
+              "fp": 0,
+              "fn": 402,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 0,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.0,
+              "tp": 0,
+              "fp": 0,
+              "fn": 402,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 0,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.1209,
+              "recall": 0.0821,
+              "f1": 0.0978,
+              "false_positive_rate": 0.067,
+              "tp": 33,
+              "fp": 240,
+              "fn": 369,
+              "tn": 3342,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 212,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -6.0,
+                  -5.4
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.1667,
+              "recall": 0.0025,
+              "f1": 0.0049,
+              "false_positive_rate": 0.0014,
+              "tp": 1,
+              "fp": 5,
+              "fn": 401,
+              "tn": 3577,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 5,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  8.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.0,
+              "tp": 0,
+              "fp": 0,
+              "fn": 402,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 0,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "false_positive_rate": 0.0,
+              "tp": 0,
+              "fp": 0,
+              "fn": 402,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 0,
+                "false_alarm_episodes": 0,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": []
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_cpu_utilization_77c1ef",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.1517,
+              "recall": 0.5409,
+              "f1": 0.237,
+              "false_positive_rate": 0.34041,
+              "tp": 218,
+              "fp": 1219,
+              "fn": 185,
+              "tn": 2362,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 227,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.4
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.1987,
+              "recall": 0.2283,
+              "f1": 0.2125,
+              "false_positive_rate": 0.1036,
+              "tp": 92,
+              "fp": 371,
+              "fn": 311,
+              "tn": 3210,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 88,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.4
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.3012,
+              "recall": 0.062,
+              "f1": 0.1029,
+              "false_positive_rate": 0.0162,
+              "tp": 25,
+              "fp": 58,
+              "fn": 378,
+              "tn": 3523,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 19,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.3
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.3404,
+              "recall": 0.0794,
+              "f1": 0.1288,
+              "false_positive_rate": 0.01731,
+              "tp": 32,
+              "fp": 62,
+              "fn": 371,
+              "tn": 3519,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 14,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.2
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.1478,
+              "recall": 0.263,
+              "f1": 0.1893,
+              "false_positive_rate": 0.17062,
+              "tp": 106,
+              "fp": 611,
+              "fn": 297,
+              "tn": 2970,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 163,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.4
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.2171,
+              "recall": 0.1762,
+              "f1": 0.1945,
+              "false_positive_rate": 0.07149,
+              "tp": 71,
+              "fp": 256,
+              "fn": 332,
+              "tn": 3325,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 75,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.4
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.2267,
+              "recall": 0.0422,
+              "f1": 0.0711,
+              "false_positive_rate": 0.0162,
+              "tp": 17,
+              "fp": 58,
+              "fn": 386,
+              "tn": 3523,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 18,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.3
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.2222,
+              "recall": 0.0397,
+              "f1": 0.0674,
+              "false_positive_rate": 0.01564,
+              "tp": 16,
+              "fp": 56,
+              "fn": 387,
+              "tn": 3525,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 14,
+                "days": 13.83,
+                "first_alarm_vs_window_center_hours": [
+                  -16.2
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_cpu_utilization_825cc2",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.1661,
+              "recall": 0.5877,
+              "f1": 0.259,
+              "false_positive_rate": 0.27689,
+              "tp": 201,
+              "fp": 1009,
+              "fn": 141,
+              "tn": 2635,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 361,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -14.2
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.7868,
+              "recall": 0.3129,
+              "f1": 0.4477,
+              "false_positive_rate": 0.00796,
+              "tp": 107,
+              "fp": 29,
+              "fn": 235,
+              "tn": 3615,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 1,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -6.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0146,
+              "f1": 0.0288,
+              "false_positive_rate": 0.0,
+              "tp": 5,
+              "fp": 0,
+              "fn": 337,
+              "tn": 3644,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -4.8
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0234,
+              "f1": 0.0457,
+              "false_positive_rate": 0.0,
+              "tp": 8,
+              "fp": 0,
+              "fn": 334,
+              "tn": 3644,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -4.7
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.7108,
+              "recall": 0.345,
+              "f1": 0.4646,
+              "false_positive_rate": 0.01317,
+              "tp": 118,
+              "fp": 48,
+              "fn": 224,
+              "tn": 3596,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 19,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -7.2
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 1.0,
+              "recall": 0.1433,
+              "f1": 0.2506,
+              "false_positive_rate": 0.0,
+              "tp": 49,
+              "fp": 0,
+              "fn": 293,
+              "tn": 3644,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -4.8
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0409,
+              "f1": 0.0787,
+              "false_positive_rate": 0.0,
+              "tp": 14,
+              "fp": 0,
+              "fn": 328,
+              "tn": 3644,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -4.8
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0409,
+              "f1": 0.0787,
+              "false_positive_rate": 0.0,
+              "tp": 14,
+              "fp": 0,
+              "fn": 328,
+              "tn": 3644,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -4.7
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_cpu_utilization_ac20cd",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.3173,
+              "recall": 0.3753,
+              "f1": 0.3439,
+              "false_positive_rate": 0.09124,
+              "tp": 152,
+              "fp": 327,
+              "fn": 253,
+              "tn": 3257,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 2,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  -1.0
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.4105,
+              "recall": 0.3284,
+              "f1": 0.3649,
+              "false_positive_rate": 0.05329,
+              "tp": 133,
+              "fp": 191,
+              "fn": 272,
+              "tn": 3393,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 19,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  0.1
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0667,
+              "f1": 0.125,
+              "false_positive_rate": 0.0,
+              "tp": 27,
+              "fp": 0,
+              "fn": 378,
+              "tn": 3584,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  0.1
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0667,
+              "f1": 0.125,
+              "false_positive_rate": 0.0,
+              "tp": 27,
+              "fp": 0,
+              "fn": 378,
+              "tn": 3584,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  0.2
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.3442,
+              "recall": 0.3654,
+              "f1": 0.3545,
+              "false_positive_rate": 0.07868,
+              "tp": 148,
+              "fp": 282,
+              "fn": 257,
+              "tn": 3302,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 15,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  -12.9
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.5243,
+              "recall": 0.1333,
+              "f1": 0.2126,
+              "false_positive_rate": 0.01367,
+              "tp": 54,
+              "fp": 49,
+              "fn": 351,
+              "tn": 3535,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 2,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  -1.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0296,
+              "f1": 0.0576,
+              "false_positive_rate": 0.0,
+              "tp": 12,
+              "fp": 0,
+              "fn": 393,
+              "tn": 3584,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  0.1
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0296,
+              "f1": 0.0576,
+              "false_positive_rate": 0.0,
+              "tp": 12,
+              "fp": 0,
+              "fn": 393,
+              "tn": 3584,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.85,
+                "first_alarm_vs_window_center_hours": [
+                  0.2
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_disk_write_bytes_1ef3de",
+          "kind": "disk_io",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.1076,
+              "recall": 0.9153,
+              "f1": 0.1925,
+              "false_positive_rate": 0.85131,
+              "tp": 432,
+              "fp": 3584,
+              "fn": 40,
+              "tn": 626,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 98,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -19.6
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.2186,
+              "recall": 0.0996,
+              "f1": 0.1368,
+              "false_positive_rate": 0.0399,
+              "tp": 47,
+              "fp": 168,
+              "fn": 425,
+              "tn": 4042,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 71,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.2
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.2766,
+              "recall": 0.0551,
+              "f1": 0.0919,
+              "false_positive_rate": 0.01615,
+              "tp": 26,
+              "fp": 68,
+              "fn": 446,
+              "tn": 4142,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 55,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.2
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.4694,
+              "recall": 0.0487,
+              "f1": 0.0883,
+              "false_positive_rate": 0.00618,
+              "tp": 23,
+              "fp": 26,
+              "fn": 449,
+              "tn": 4184,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 19,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.1
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.1746,
+              "recall": 0.125,
+              "f1": 0.1457,
+              "false_positive_rate": 0.06627,
+              "tp": 59,
+              "fp": 279,
+              "fn": 413,
+              "tn": 3931,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 72,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.2
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.2072,
+              "recall": 0.0975,
+              "f1": 0.1326,
+              "false_positive_rate": 0.04181,
+              "tp": 46,
+              "fp": 176,
+              "fn": 426,
+              "tn": 4034,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 73,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.2
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.2348,
+              "recall": 0.0657,
+              "f1": 0.1026,
+              "false_positive_rate": 0.02399,
+              "tp": 31,
+              "fp": 101,
+              "fn": 441,
+              "tn": 4109,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 71,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.2
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.2933,
+              "recall": 0.0466,
+              "f1": 0.0804,
+              "false_positive_rate": 0.01259,
+              "tp": 22,
+              "fp": 53,
+              "fn": 450,
+              "tn": 4157,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 42,
+                "days": 16.26,
+                "first_alarm_vs_window_center_hours": [
+                  -13.1
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "ec2_network_in_257a54",
+          "kind": "network",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.1299,
+              "recall": 0.2139,
+              "f1": 0.1617,
+              "false_positive_rate": 0.16071,
+              "tp": 86,
+              "fp": 576,
+              "fn": 316,
+              "tn": 3008,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 160,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -16.7
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.2195,
+              "recall": 0.0224,
+              "f1": 0.0406,
+              "false_positive_rate": 0.00893,
+              "tp": 9,
+              "fp": 32,
+              "fn": 393,
+              "tn": 3552,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 28,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -12.7
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.6,
+              "recall": 0.0149,
+              "f1": 0.0291,
+              "false_positive_rate": 0.00112,
+              "tp": 6,
+              "fp": 4,
+              "fn": 396,
+              "tn": 3580,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 2,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -0.1
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.8571,
+              "recall": 0.0149,
+              "f1": 0.0293,
+              "false_positive_rate": 0.00028,
+              "tp": 6,
+              "fp": 1,
+              "fn": 396,
+              "tn": 3583,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 1,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.1
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.1185,
+              "recall": 0.107,
+              "f1": 0.1124,
+              "false_positive_rate": 0.08929,
+              "tp": 43,
+              "fp": 320,
+              "fn": 359,
+              "tn": 3264,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 274,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -16.6
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 0.1895,
+              "recall": 0.0896,
+              "f1": 0.1216,
+              "false_positive_rate": 0.04297,
+              "tp": 36,
+              "fp": 154,
+              "fn": 366,
+              "tn": 3430,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 148,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -16.6
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 0.5385,
+              "recall": 0.0174,
+              "f1": 0.0337,
+              "false_positive_rate": 0.00167,
+              "tp": 7,
+              "fp": 6,
+              "fn": 395,
+              "tn": 3578,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 4,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -0.1
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 0.75,
+              "recall": 0.0149,
+              "f1": 0.0293,
+              "false_positive_rate": 0.00056,
+              "tp": 6,
+              "fp": 2,
+              "fn": 396,
+              "tn": 3582,
+              "event": {
+                "windows": 1,
+                "detected": 1,
+                "false_alarm_episodes": 2,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.1
+                ]
+              }
+            }
+          }
+        },
+        {
+          "series": "rds_cpu_utilization_cc0c53",
+          "kind": "cpu",
+          "isolation_forest": {
+            "f1_optimal": {
+              "precision": 0.6154,
+              "recall": 0.2581,
+              "f1": 0.3636,
+              "false_positive_rate": 0.01815,
+              "tp": 104,
+              "fp": 65,
+              "fn": 299,
+              "tn": 3517,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 21,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -7.0,
+                  0.0
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 1.0,
+              "recall": 0.1935,
+              "f1": 0.3243,
+              "false_positive_rate": 0.0,
+              "tp": 78,
+              "fp": 0,
+              "fn": 325,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0273,
+              "f1": 0.0531,
+              "false_positive_rate": 0.0,
+              "tp": 11,
+              "fp": 0,
+              "fn": 392,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0273,
+              "f1": 0.0531,
+              "false_positive_rate": 0.0,
+              "tp": 11,
+              "fp": 0,
+              "fn": 392,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.2
+                ]
+              }
+            }
+          },
+          "robust_zscore": {
+            "f1_optimal": {
+              "precision": 0.4753,
+              "recall": 0.263,
+              "f1": 0.3387,
+              "false_positive_rate": 0.03266,
+              "tp": 106,
+              "fp": 117,
+              "fn": 297,
+              "tn": 3465,
+              "event": {
+                "windows": 2,
+                "detected": 2,
+                "false_alarm_episodes": 78,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  -7.0,
+                  0.0
+                ]
+              }
+            },
+            "fpr_2pct": {
+              "precision": 1.0,
+              "recall": 0.1017,
+              "f1": 0.1847,
+              "false_positive_rate": 0.0,
+              "tp": 41,
+              "fp": 0,
+              "fn": 362,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "fpr_0_5pct": {
+              "precision": 1.0,
+              "recall": 0.0273,
+              "f1": 0.0531,
+              "false_positive_rate": 0.0,
+              "tp": 11,
+              "fp": 0,
+              "fn": 392,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.0
+                ]
+              }
+            },
+            "alert_rule_15m": {
+              "precision": 1.0,
+              "recall": 0.0273,
+              "f1": 0.0531,
+              "false_positive_rate": 0.0,
+              "tp": 11,
+              "fp": 0,
+              "fn": 392,
+              "tn": 3582,
+              "event": {
+                "windows": 2,
+                "detected": 1,
+                "false_alarm_episodes": 0,
+                "days": 13.84,
+                "first_alarm_vs_window_center_hours": [
+                  0.2
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "final_model": {
+      "train_buckets": 32580,
+      "train_positive_buckets": 3231,
+      "portable_scorer_max_abs_error": 5.551115123125783e-16,
+      "thresholds": {
+        "warning": 0.6158467325916196,
+        "critical": 0.7123844043479515
+      },
+      "in_sample_at_warning": {
+        "precision": 0.435,
+        "recall": 0.1399,
+        "f1": 0.2117,
+        "false_positive_rate": 0.02,
+        "tp": 452,
+        "fp": 587,
+        "fn": 2779,
+        "tn": 28762
+      },
+      "in_sample_at_critical": {
+        "precision": 0.4474,
+        "recall": 0.0368,
+        "f1": 0.0681,
+        "false_positive_rate": 0.00501,
+        "tp": 119,
+        "fp": 147,
+        "fn": 3112,
+        "tn": 29202
+      },
+      "note": "In-sample numbers describe the deployed thresholds and are optimistic; use the leave-one-series-out results as the performance estimate."
+    }
+  },
+  "early_warning": {
+    "target": "15-minute mean rises more than 4.0 robust SD above the 24h baseline within the next 60 minutes, given it is not elevated now",
+    "split": "per series, chronological: first 60% train, next 20% validation, last 20% test, 1-hour gaps between splits",
+    "rows": {
+      "train": 18387,
+      "val": 6190,
+      "test": 6253
+    },
+    "positives": {
+      "train": 2759,
+      "val": 412,
+      "test": 465
+    },
+    "candidates": {
+      "logistic_regression": {
+        "val_pr_auc": 0.2084,
+        "val_roc_auc": 0.6764
+      },
+      "random_forest": {
+        "val_pr_auc": 0.3302,
+        "val_roc_auc": 0.8348
+      },
+      "gradient_boosting": {
+        "val_pr_auc": 0.3194,
+        "val_roc_auc": 0.8385
+      }
+    },
+    "baseline_current_z_short_val_pr_auc": 0.1223,
+    "status": "experimental",
+    "selected": "random_forest",
+    "test": {
+      "pr_auc": 0.2491,
+      "pr_auc_uncalibrated": 0.3204,
+      "roc_auc": 0.7458,
+      "baseline_current_z_short_pr_auc": 0.135,
+      "base_rate": 0.0744,
+      "brier": 0.06159,
+      "brier_uncalibrated": 0.05929,
+      "brier_base_rate_reference": 0.07456,
+      "brier_skill_score": 0.174,
+      "expected_calibration_error": 0.0342,
+      "threshold": 0.3,
+      "at_threshold": {
+        "precision": 0.4771,
+        "recall": 0.314,
+        "f1": 0.3787,
+        "false_positive_rate": 0.02764,
+        "tp": 146,
+        "fp": 160,
+        "fn": 319,
+        "tn": 5628
+      }
+    },
+    "probability_is_calibrated": true
+  }
+}

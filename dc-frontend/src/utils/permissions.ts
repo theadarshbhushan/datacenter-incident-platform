@@ -8,6 +8,7 @@ export type Permission =
   | 'incident:write'
   | 'infra:manage'
   | 'alert:act'
+  | 'predictions:run'
   | 'alertRules:manage'
   | 'monitoring:manage'
   | 'integrations:manage'
@@ -23,6 +24,7 @@ const matrix: Record<Permission, Role[]> = {
   'incident:write': ['owner', 'admin', 'engineer'],
   'infra:manage': ['owner', 'admin'],
   'alert:act': ['owner', 'admin', 'engineer'],
+  'predictions:run': ['owner', 'admin', 'engineer'],
   'alertRules:manage': ['owner', 'admin'],
   'monitoring:manage': ['owner', 'admin'],
   'integrations:manage': ['owner', 'admin'],

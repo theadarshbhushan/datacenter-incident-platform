@@ -1,38 +1,63 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.core.auth import CSRF_HEADER, check_csrf, current_auth, origin_allowed, require_internal, resolve_org
+from app.core.auth import CSRF_HEADER, check_csrf, current_auth, origin_allowed, resolve_org
 from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.core.errors import ApiException
-from app.core.tokens import safe_equals
-from app.routers import app_routers, internal_routers
+from app.ml.inference import registry
+from app.routers import app_routers
 from app.schemas.response import success_response
-from app.websocket.manager import INTERNAL, ws_manager
+from app.websocket.manager import ws_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # The model is loaded once here and shared by every request; it is never retrained at runtime.
+    registry.load(settings.ML_MODEL_PATH or None)
     await init_db()
     logger.info("Database initialized")
+    if registry.ready:
+        await _record_model()
     yield
     logger.info("Shutting down")
+    from app.services.alerts import wait_for_deliveries
+
+    await wait_for_deliveries()
     try:
         await close_db()
     except Exception as e:
         logger.warning(f"Error closing database: {e}")
 
 
+async def _record_model() -> None:
+    """Keep a row per model version the API has served (model metadata)."""
+    from app.core.timeutil import utcnow
+    from app.models.monitoring import ModelRecord
+
+    rec = await ModelRecord.get(registry.version)
+    if rec:
+        rec.last_loaded_at = utcnow()
+    else:
+        rec = ModelRecord(id=registry.version, trained_at=registry.bundle["trained_at"], artifact_sha256=registry.sha256,
+                          summary=registry.bundle.get("summary", {}))
+    await rec.save()
+
+
 app = FastAPI(
     title="VaultWatch API",
-    description="VaultWatch data center incident monitoring API",
+    description=(
+        "VaultWatch data center monitoring API. Browser clients use the session cookie plus the X-CSRF-Token header; "
+        "monitoring agents send telemetry with an organization API key (X-API-Key). Every response has the shape "
+        "{success, data, message, timestamp}; errors add code and fields."
+    ),
     version=settings.VERSION,
     lifespan=lifespan,
     docs_url="/docs" if settings.is_development else None,
@@ -53,7 +78,7 @@ UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 async def csrf_and_headers(request: Request, call_next):
     """CSRF for cookie-authenticated API calls. API-key and internal-token requests carry no cookies."""
     if request.method in UNSAFE and request.url.path.startswith("/api/"):
-        machine = request.headers.get("x-api-key") or request.headers.get("x-internal-token") or request.headers.get("authorization", "").lower().startswith("bearer vw_")
+        machine = request.headers.get("x-api-key") or request.headers.get("authorization", "").lower().startswith("bearer vw_")
         if not origin_allowed(request):
             return JSONResponse(status_code=403, content=error_body("Request origin is not allowed.", "csrf_failed"))
         if not machine and not check_csrf(request):
@@ -107,12 +132,12 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content=error_body("The server had a problem. Please try again.", "server_error"))
 
 
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], summary="Liveness: the process is up (see /api/v1/health/ready for dependencies)")
 async def health_check():
     return {
         "status": "healthy",
         "success": True,
-        "data": {"status": "healthy", "version": settings.VERSION, "service": "vaultwatch-backend"},
+        "data": {"status": "healthy", "version": settings.VERSION, "service": "vaultwatch-backend", "modelReady": registry.ready},
         "message": "VaultWatch API is operational",
         "timestamp": datetime.utcnow().isoformat(),
     }
@@ -122,18 +147,14 @@ async def health_check():
 async def websocket_endpoint(websocket: WebSocket):
     """Live updates. Browser clients use their session cookie and receive only their organization's events."""
     scope = None
-    token = websocket.headers.get("x-internal-token", "")
-    if settings.INTERNAL_API_TOKEN and token and safe_equals(token, settings.INTERNAL_API_TOKEN):
-        scope = INTERNAL
-    else:
-        origin = websocket.headers.get("origin")
-        if origin and origin.rstrip("/") not in settings.cors_origins:
-            await websocket.close(code=1008)
-            return
-        ctx = await current_auth(websocket)  # type: ignore[arg-type]  (reads cookies like a Request)
-        resolved = await resolve_org(ctx) if ctx else None
-        if resolved:
-            scope = resolved[0].id
+    origin = websocket.headers.get("origin")
+    if origin and origin.rstrip("/") not in settings.cors_origins:
+        await websocket.close(code=1008)
+        return
+    ctx = await current_auth(websocket)  # type: ignore[arg-type]  (reads cookies like a Request)
+    resolved = await resolve_org(ctx) if ctx else None
+    if resolved:
+        scope = resolved[0].id
     if not scope:
         await websocket.close(code=1008)
         return
@@ -151,8 +172,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 for r in app_routers:
     app.include_router(r, prefix="/api/v1")
-for r in internal_routers:
-    app.include_router(r, prefix="/api/v1", dependencies=[Depends(require_internal)])
 
 
 @app.get("/", include_in_schema=False)

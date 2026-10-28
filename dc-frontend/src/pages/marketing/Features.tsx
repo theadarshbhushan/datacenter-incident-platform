@@ -12,7 +12,7 @@ const sections = [
   {
     id: 'predictive-analytics', icon: BrainCircuit, title: 'Predictive analytics',
     text: 'Risk scores per server and rack for 6-hour, 24-hour, 72-hour and 7-day horizons.',
-    points: ['Incident probability and model confidence shown as separate numbers', 'Risk heatmap across assets and time', 'Predicted incident types such as thermal overload, disk failure or PSU fault', 'Contributing factors with their weights'],
+    points: ['Anomaly score, severity and confidence shown as separate things', 'Experimental one-hour early warning, labeled as such', 'Per-metric contributing factors against each server\'s baseline', 'Published evaluation results for every model version'],
   },
   {
     id: 'anomaly-detection', icon: Radar, title: 'Anomaly detection',
@@ -22,7 +22,7 @@ const sections = [
   {
     id: 'root-cause-analysis', icon: ScanSearch, title: 'Root-cause analysis',
     text: 'Each incident carries a probable root cause with the evidence behind it.',
-    points: ['Probable cause with a confidence score', 'Ranked contributing factors', 'Remediation suggestions engineers can follow', 'Links to related past incidents'],
+    points: ['Suspected cause with the evidence behind it', 'Ranked contributing factors', 'Remediation suggestions engineers can follow', 'Your team confirms the actual cause'],
   },
   {
     id: 'infrastructure-monitoring', icon: Server, title: 'Infrastructure monitoring',

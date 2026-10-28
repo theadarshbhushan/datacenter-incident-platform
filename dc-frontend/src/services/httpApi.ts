@@ -9,7 +9,11 @@ import type {
   Alert, AlertRule, Incident, Invitation, InvitationDetails, MailMessage, Member, MonitoringSettings,
   NotificationSettings, Organization, Session, User, UserSession, Workspace,
 } from '@/types/domain';
-import { ApiError, type ApiClient, type BackendHealth, type CreatedApiKey, type SignupResult, type TokenState, type VerifyResult } from './types';
+import type { IncidentContext, MetricSeries, ReportSummary } from '@/types/domain';
+import {
+  ApiError, SESSION_EXPIRED_EVENT, type ApiClient, type BackendHealth, type CreatedApiKey, type IntegrationStatus, type PredictionRunResult,
+  type SignupResult, type TokenState, type VerifyResult,
+} from './types';
 import { config } from '@/config/env';
 
 const base = `${config.apiUrl}/api/v1`;
@@ -39,6 +43,10 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
     if (res.status === 403 && payload?.code === 'csrf_failed' && retry) {
       csrfToken = null;
       return request<T>(method, path, body, false);
+    }
+    // A 401 outside the sign-in flows means the session expired or was revoked: tell the app to sign out.
+    if (res.status === 401 && !path.startsWith('/auth/') && !path.startsWith('/invitations/') && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     }
     const message = typeof payload?.message === 'string' ? payload.message : res.status >= 500 ? 'The server had a problem. Please try again.' : 'Request failed.';
     throw new ApiError(res.status, message, payload?.code ?? 'error', payload?.fields ?? undefined);
@@ -111,6 +119,15 @@ export const httpApi: ApiClient = {
   updateNotificationSettings: (s) => put<NotificationSettings>('/workspace/notification-settings', s),
   updateMonitoring: (s) => put<MonitoringSettings>('/workspace/monitoring', s),
   loadSampleEnvironment: () => post('/workspace/sample-environment'),
+  removeSampleEnvironment: () => del('/workspace/sample-environment'),
+  getIntegrationStatus: () => get<IntegrationStatus>('/integrations/status'),
+
+  getMetrics: (serverId, window, metrics) =>
+    get<MetricSeries>(`${serverId ? `/servers/${encodeURIComponent(serverId)}/metrics` : '/metrics/fleet'}?window=${window}&metrics=${metrics.join(',')}`),
+  getIncidentContext: (id, window) => get<IncidentContext>(`/incidents/${encodeURIComponent(id)}?window=${window}`),
+  runPredictions: () => post<PredictionRunResult>('/predictions/run', {}),
+  getReportSummary: (from, to) =>
+    get<ReportSummary>(`/reports/summary?start=${encodeURIComponent(new Date(from).toISOString())}&end=${encodeURIComponent(new Date(to).toISOString())}`),
 
   inviteMember: (email, role) => post<Invitation>('/team/invitations', { email, role }),
   changeMemberRole: (userId, role) => patch<Member>(`/team/members/${encodeURIComponent(userId)}`, { role }),

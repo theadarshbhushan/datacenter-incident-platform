@@ -11,7 +11,8 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-1234567890")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 os.environ.setdefault("EMAIL_BACKEND", "console")
-os.environ.setdefault("INTERNAL_API_TOKEN", "internal-test-token")
+os.environ.setdefault("RUN_MIGRATIONS_ON_STARTUP", "false")
+os.environ.setdefault("DEMO_SEED_HOURS", "5")  # the in-memory test database checks unique indexes row by row
 
 import pytest  # noqa: E402
 from beanie import init_beanie  # noqa: E402
@@ -20,19 +21,21 @@ from mongomock_motor import AsyncMongoMockClient  # noqa: E402
 
 from app.core import ratelimit  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models.account import ACCOUNT_MODELS, DevMail  # noqa: E402
-from app.models.alert import Alert  # noqa: E402
-from app.models.incident import Incident  # noqa: E402
-from app.models.metric import Metric  # noqa: E402
-from app.models.server import Server  # noqa: E402
-from app.models.user import User  # noqa: E402
+from app.ml.inference import registry  # noqa: E402
+from app.models import ALL_MODELS  # noqa: E402
+from app.models.account import DevMail  # noqa: E402
+from app.models.monitoring import TelemetryBucket, TelemetryPoint  # noqa: E402
 
 PASSWORD = "Correct-Horse-42"
 
 # mongomock lacks a few keyword arguments Beanie passes for the time-series metrics collection.
 import mongomock  # noqa: E402
 
-Metric.Settings.timeseries = None  # mongomock has no time-series collections; MongoDB still uses them
+TelemetryPoint.Settings.timeseries = None  # mongomock has no time-series collections; MongoDB still uses them
+# mongomock checks unique indexes and TTL expiry by scanning every document on every write, which makes
+# bulk telemetry inserts quadratic. Real MongoDB uses the indexes; tests skip them for the bucket rollups.
+TelemetryBucket.Settings.indexes = []
+mongomock.store.CollectionStore._remove_expired_documents = lambda self: None
 
 _list_names = mongomock.database.Database.list_collection_names
 _create = mongomock.database.Database.create_collection
@@ -43,8 +46,10 @@ mongomock.database.Database.create_collection = lambda self, name, **kw: _create
 @pytest.fixture(autouse=True)
 async def db():
     client = AsyncMongoMockClient()
-    await init_beanie(database=client["vaultwatch_test"], document_models=[User, Server, Metric, Incident, Alert, *ACCOUNT_MODELS])
+    await init_beanie(database=client["vaultwatch_test"], document_models=ALL_MODELS)
     ratelimit.reset_all()
+    if not registry.ready:
+        registry.load()  # the real artifact in app/ml/artifacts, loaded once per test session
     yield
 
 

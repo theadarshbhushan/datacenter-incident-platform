@@ -46,11 +46,46 @@ class CommentAction(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
-IncidentAction = Union[AckAction, AssignAction, StatusAction, ResolveAction, ReopenAction, CommentAction]
+class SeverityAction(BaseModel):
+    type: Literal["severity"]
+    severity: Severity
+
+
+class ConfirmRootCauseAction(BaseModel):
+    """A person confirms (or corrects) the cause. Until then the analysis is only a suspicion."""
+    type: Literal["confirm_root_cause"]
+    rootCause: str = Field(min_length=3, max_length=500)
+
+
+class RefreshAnalysisAction(BaseModel):
+    type: Literal["refresh_analysis"]
+
+
+class EditAction(BaseModel):
+    type: Literal["edit"]
+    title: Optional[str] = Field(default=None, min_length=5, max_length=140)
+    description: Optional[str] = Field(default=None, max_length=4000)
+
+
+IncidentAction = Union[AckAction, AssignAction, StatusAction, ResolveAction, ReopenAction, CommentAction, SeverityAction,
+                       ConfirmRootCauseAction, RefreshAnalysisAction, EditAction]
+
+
+class IncidentPatch(BaseModel):
+    """PATCH /incidents/{id}: each provided field is applied as the matching action, in this order."""
+    title: Optional[str] = Field(default=None, min_length=5, max_length=140)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    severity: Optional[Severity] = None
+    assigneeId: Optional[str] = Field(default=None, max_length=64)
+    unassign: bool = False
+    acknowledged: Optional[Literal[True]] = None
+    status: Optional[Literal["ongoing", "investigating", "resolved"]] = None
+    resolutionNote: Optional[str] = Field(default=None, max_length=2000)
+    rootCause: Optional[str] = Field(default=None, min_length=3, max_length=500)
 
 
 class AlertActionIn(BaseModel):
-    type: Literal["acknowledge", "dismiss"]
+    type: Literal["acknowledge", "dismiss", "resolve"]
 
 
 class AlertRuleIn(BaseModel):

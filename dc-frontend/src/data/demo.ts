@@ -1,6 +1,7 @@
 import type {
+  MetricKey, MetricSeries,
   AIAnalysis, Alert, AlertRule, DataCenter, Incident, IncidentCategory, ModelInfo, MonitoringSettings,
-  NotificationSettings, Prediction, PredictionHorizon, Rack, Server, Severity, IncidentStatus, HealthStatus,
+  NotificationSettings, Prediction, Rack, Server, Severity, IncidentStatus, HealthStatus,
 } from '@/types/domain';
 import { mulberry32 } from '@/utils/random';
 
@@ -66,7 +67,7 @@ export function buildInfrastructure(): { racks: Rack[]; servers: Server[] } {
       }
       servers.push(...rackServers);
       const worst = worstStatus(rackServers.map((s) => s.status));
-      const powerKw = Math.round(rackServers.reduce((a, s) => a + s.powerW, 0) / 100) / 10;
+      const powerKw = Math.round(rackServers.reduce((a, s) => a + (s.powerW ?? 0), 0) / 100) / 10;
       racks.push({
         id: rackId,
         label,
@@ -75,8 +76,10 @@ export function buildInfrastructure(): { racks: Rack[]; servers: Server[] } {
         position: Number(label.slice(1)),
         powerKw,
         powerCapacityKw: 8,
-        inletTemp: Math.round(Math.max(...rackServers.map((s) => s.temperature)) * 0.45 + 4),
+        inletTemp: null,
+        maxTemp: Math.max(...rackServers.map((s) => s.temperature ?? 0)),
         status: worst,
+        sample: true,
       });
     });
   }
@@ -277,56 +280,51 @@ export function buildIncidents(servers: Server[], now = Date.now(), ownerName = 
   });
 }
 
-const predictionTypes: { type: string; factors: [string, string][]; rec: string }[] = [
-  { type: 'Thermal overload', factors: [['Inlet temperature trend', '+4.2°C / 6h'], ['CPU utilization', '91% avg'], ['Fan speed', '92% max']], rec: 'Rebalance workloads to cooler racks and inspect row airflow.' },
-  { type: 'Memory exhaustion', factors: [['Heap growth', '+1.8 GB / h'], ['Swap activity', 'rising'], ['GC pause time', '340 ms p95']], rec: 'Schedule a rolling restart and investigate the recent deploy.' },
-  { type: 'Disk failure', factors: [['SMART reallocated sectors', '112'], ['Read error rate', '3x baseline'], ['Disk age', '4.1 years']], rec: 'Pre-emptively replace the disk and verify RAID health.' },
-  { type: 'Power supply fault', factors: [['PSU voltage variance', '±4.6%'], ['PSU temperature', '61°C'], ['Single feed', 'yes']], rec: 'Verify redundant PSU cabling and order a spare.' },
-  { type: 'Network degradation', factors: [['CRC errors', '240 / h'], ['Optic RX power', '-9.8 dBm'], ['Retransmits', '1.9%']], rec: 'Replace the uplink optic and move traffic to the secondary link.' },
+const metricTypes: { metric: string; label: string; type: string; category: IncidentCategory; unit: string; rec: string }[] = [
+  { metric: 'temperature', label: 'Temperature', type: 'Thermal anomaly', category: 'thermal', unit: '°C', rec: 'Check fans, airflow and inlet temperature for the rack; move heavy workloads if it keeps rising.' },
+  { metric: 'memory', label: 'Memory', type: 'Memory anomaly', category: 'software', unit: '%', rec: 'Look for a memory leak or a recent deploy; restart the service in a quiet window if memory keeps climbing.' },
+  { metric: 'cpu', label: 'CPU', type: 'CPU anomaly', category: 'capacity', unit: '%', rec: 'Check which process or job drove CPU up, and move or throttle it if the server is saturated.' },
+  { metric: 'network', label: 'Network throughput', type: 'Network traffic anomaly', category: 'network', unit: ' Mb/s', rec: 'Check the switch port, uplink errors and traffic sources for this server.' },
 ];
 
+/**
+ * Browser-only demo (VITE_API_MODE=mock): illustrative predictions in the same shape the API returns.
+ * No model runs here. With the backend, predictions come from the trained model (see dc-backend/app/ml).
+ */
 export function buildPredictions(servers: Server[], now = Date.now()): Prediction[] {
   const rand = mulberry32(99);
-  const horizons: PredictionHorizon[] = ['6h', '24h', '72h', '7d'];
-  const horizonMs: Record<PredictionHorizon, number> = { '6h': 6 * HOUR, '24h': DAY, '72h': 3 * DAY, '7d': 7 * DAY };
-  const forced: Record<string, [number, number, number]> = {
-    // serverId: [typeIndex, probability, confidence]
-    'srv-a02-3': [0, 0.87, 0.92],
-    'srv-b01-2': [1, 0.72, 0.88],
-    'srv-a03-1': [0, 0.64, 0.81],
-    'srv-b03-4': [2, 0.41, 0.77],
-    'srv-d01-2': [3, 0.33, 0.69],
+  const forced: Record<string, [number, number, 'warning' | 'critical']> = {
+    // serverId: [metric index, anomaly score, severity]
+    'srv-a02-3': [0, 0.99, 'critical'],
+    'srv-b01-2': [1, 0.98, 'warning'],
+    'srv-a03-1': [0, 0.97, 'warning'],
   };
-  return servers.map((s, i) => {
+  const out: Prediction[] = [];
+  servers.filter((s) => s.connectivity !== 'offline').forEach((s, i) => {
     const f = forced[s.id];
-    const tIdx = f ? f[0] : Math.floor(rand() * predictionTypes.length);
-    const t = predictionTypes[tIdx]!;
-    const probability = f ? f[1] : Math.round((0.03 + rand() * 0.22) * 100) / 100;
-    const confidence = f ? f[2] : Math.round((0.7 + rand() * 0.25) * 100) / 100;
-    const horizon = f ? (probability > 0.8 ? '24h' : '72h') : horizons[Math.floor(rand() * horizons.length)]!;
-    return {
-      id: `pred-${i + 1}`,
-      serverId: s.id,
-      rackId: s.rackId,
-      dcId: s.dcId,
-      type: t.type,
-      probability,
-      confidence,
-      horizon,
-      expectedAt: new Date(now + horizonMs[horizon] * (0.4 + rand() * 0.5)).toISOString(),
-      factors: t.factors.map(([label, value], j) => ({ label, value, weight: Math.round((0.5 - j * 0.15 + rand() * 0.05) * 100) / 100 })),
+    const t = metricTypes[f ? f[0] : Math.floor(rand() * metricTypes.length)]!;
+    const score = f ? f[1] : Math.round((0.1 + rand() * 0.75) * 100) / 100;
+    const common = {
+      serverId: s.id, rackId: s.rackId, dcId: s.dcId, category: t.category, metric: t.metric, modelVersion: 'sample',
+      confidence: 'medium' as const, confidenceReason: 'Sample prediction: no model runs in browser-only demo mode.',
+      generatedAt: new Date(now - 4 * 60000).toISOString(), dataTime: new Date(now - 5 * 60000).toISOString(), sample: true,
+      factors: [{ label: t.label, metric: t.metric, weight: score, value: `${t.metric === 'cpu' ? s.cpu : t.metric === 'memory' ? s.memory : t.metric === 'temperature' ? s.temperature : 180}${t.unit}` }],
       recommendation: t.rec,
-      generatedAt: new Date(now - 10 * 60000).toISOString(),
-      sample: true,
     };
+    out.push({ ...common, id: `pred-${i + 1}`, kind: 'anomaly', type: t.type, severity: f ? f[2] : score > 0.9 ? 'warning' : 'normal', anomalyScore: score,
+      riskScore: null, probability: null, probabilityCalibrated: false, horizon: 'now', experimental: false, expectedAt: null });
+    const risk = f ? 0.62 : Math.round(rand() * 0.2 * 100) / 100;
+    out.push({ ...common, id: `pred-ew-${i + 1}`, kind: 'early_warning', type: `${t.label} surge`, severity: risk >= 0.3 ? 'warning' : 'normal', anomalyScore: null,
+      riskScore: risk, probability: null, probabilityCalibrated: false, horizon: '1h', experimental: true, expectedAt: new Date(now + HOUR).toISOString() });
   });
+  return out;
 }
 
-export const demoModel = (now = Date.now()): ModelInfo => ({
-  name: 'Ensemble (Isolation Forest + XGBoost + BiLSTM)',
-  version: 'sample-2.4',
-  confidence: 0.92,
-  trainedAt: new Date(now - 3 * DAY).toISOString(),
+export const demoModel = (): ModelInfo => ({
+  name: 'Sample predictions (no model runs in browser-only demo mode)',
+  version: null,
+  trainedAt: null,
+  ready: false,
   sample: true,
 });
 
@@ -382,4 +380,46 @@ export function resourceSeries(kind: 'cpu' | 'memory' | 'network' | 'storage', p
     });
   }
   return out;
+}
+
+/** Sample log lines for an incident (browser-only demo mode; the backend has no log integration yet). */
+export function sampleLogs(inc: Incident, server: Server | undefined) {
+  const host = server?.hostname ?? 'unknown-host';
+  const start = new Date(inc.createdAt).getTime();
+  const t = (min: number) => new Date(start + min * 60_000).toISOString().replace('T', ' ').slice(0, 19);
+  const byCat: Record<string, [string, string][]> = {
+    thermal: [['WARN', `ipmi: temperature ${server?.temperature ?? 78}C exceeds warning threshold 75C`], ['WARN', 'kernel: CPU0: Core temperature above threshold, cpu clock throttled'], ['INFO', 'bmc: fan profile changed to performance']],
+    software: [['WARN', 'jvm: heap usage 91% after full GC'], ['ERROR', 'jvm: GC pause 1.4s exceeds SLO'], ['INFO', 'deploy: consumer-client v3.4.1 rollout complete']],
+    power: [['ERROR', 'bmc: PSU1 status: failure detected'], ['WARN', 'bmc: redundancy lost on power supply'], ['ERROR', 'healthcheck: 3 consecutive probe failures']],
+    network: [['WARN', 'switch: Eth1/49 CRC errors 240/h'], ['ERROR', 'switch: Eth1/49 link flap detected']],
+    hardware: [['WARN', 'bmc: Fan3 reading 0 RPM'], ['INFO', 'bmc: remaining fans compensating at 85%']],
+    storage: [['WARN', 'smartd: reallocated sector count increased to 112'], ['ERROR', 'md0: write latency p99 41ms']],
+    capacity: [['WARN', 'scheduler: vCPU allocation 85% of pool'], ['INFO', 'scheduler: 12 pending placements']],
+  };
+  return (byCat[inc.category] ?? []).map(([level, msg], i) => ({ at: t(i * 2 - 3), level, host, msg }));
+}
+
+const windowMs: Record<MetricSeries['window'], number> = { '1h': HOUR, '6h': 6 * HOUR, '24h': DAY, '7d': 7 * DAY };
+
+/** Sample 5-minute series anchored to the sample servers' current readings (browser-only demo mode). */
+export function sampleMetricSeries(server: Server | null, fleet: Server[], window: MetricSeries['window'], metrics: MetricKey[], now = Date.now()): MetricSeries {
+  const step = window === '7d' ? HOUR : 5 * 60_000;
+  const n = Math.round(windowMs[window] / step);
+  const current = (m: MetricKey): number => {
+    const pick = (s: Server) => ({ cpu: s.cpu, memory: s.memory, storage: s.storage, temperature: s.temperature, power: s.powerW, latency: s.networkLatencyMs, network: 180, disk_io: 25 }[m] ?? 0);
+    const src = server ? [server] : fleet.filter((s) => s.connectivity !== 'offline');
+    return src.length ? src.reduce((a, s) => a + (pick(s) ?? 0), 0) / src.length : 0;
+  };
+  const rand = mulberry32((server?.id ?? 'fleet').length * 97 + n);
+  const points = Array.from({ length: n }, (_, i) => {
+    const at = now - (n - 1 - i) * step;
+    const p: MetricSeries['points'][number] = { at: new Date(at).toISOString() };
+    metrics.forEach((m) => {
+      const target = current(m);
+      const wave = Math.sin(at / (6 * HOUR)) * target * 0.08;
+      p[m] = Math.round(Math.max(0, target + wave - Math.sin(now / (6 * HOUR)) * target * 0.08 + (rand() - 0.5) * target * 0.04) * 10) / 10;
+    });
+    return p;
+  });
+  return { window, bucketSeconds: step / 1000, from: new Date(now - windowMs[window]).toISOString(), to: new Date(now).toISOString(), metrics, servers: server ? 1 : fleet.length, points, sample: true };
 }

@@ -2,7 +2,7 @@
 Sliding-window rate limiter.
 
 In-memory and per process: correct for a single uvicorn worker and for development. For several
-workers or hosts, swap the store for Redis (REDIS_URL is already configured) so limits are shared.
+workers or hosts, move the store to a shared backend such as Redis so limits are shared.
 """
 import math
 import time

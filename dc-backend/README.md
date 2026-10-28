@@ -1,43 +1,59 @@
-# VaultWatch API (FastAPI)
+# VaultWatch API (FastAPI + MongoDB)
 
 ## Run
 
 ```bash
-python -m venv .venv && . .venv/bin/activate      # Python 3.11
+python -m venv .venv && . .venv/bin/activate      # Python 3.11+  (Windows: .venv\Scripts\activate)
 pip install -r requirements-dev.txt
-export MONGO_URI=mongodb://localhost:27017 ENVIRONMENT=development
+# MONGO_URI comes from ../.env: an Atlas mongodb+srv:// URI or mongodb://localhost:27017
+python -m app.migrations upgrade                   # optional: the API also applies pending migrations at startup
 uvicorn app.main:app --reload --port 8000          # docs at http://localhost:8000/docs (development only)
-pytest                                             # in-memory MongoDB, no services needed
+pytest                                             # in-memory MongoDB + the real model artifact, no services needed
 ```
 
-Configuration comes from `../.env` (see `../.env.example`). Outside `ENVIRONMENT=development`, the app refuses to start without a strong `SECRET_KEY`.
+Health: `GET /health` (process up), `GET /api/v1/health/ready` (database reachable and model loaded; 503 otherwise),
+`GET /api/v1/ml/status` (model version, thresholds, evaluation summary).
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `app/core/auth.py` | Cookie sessions, CSRF, `require_user` / `require_org(permission)` dependencies, password hashing |
-| `app/core/permissions.py` | Role matrix. The frontend mirrors it in `src/utils/permissions.ts`. |
-| `app/core/ratelimit.py` | Sliding-window rate limiter (in-memory) |
-| `app/core/mailer.py` | Console or SMTP email |
-| `app/models/account.py` | Organizations, memberships, invitations, tokens, sessions, API keys, workspace documents |
-| `app/routers/auth.py` | `/auth/*`, `/invitations/*`, `/me/*`, `/orgs/switch`, `/onboarding/*`, `/org` |
-| `app/routers/workspace.py` | `/workspace/*`, `/team/*`, `/api-keys`, `/contact`, `/dev/mail` |
-| `app/routers/ingest.py` | `POST /metrics` for agents, authenticated with an org API key |
-| `app/services/sample_data.py` | The labeled sample environment. It matches the frontend demo data exactly. |
-| `routers/servers.py` … `analytics.py` | Internal telemetry API. Needs `X-Internal-Token`; disabled when `INTERNAL_API_TOKEN` is empty. |
+| `app/core/` | Config, cookie sessions + CSRF (`auth.py`), role matrix (`permissions.py`), rate limits, mailer, UTC helpers |
+| `app/models/account.py` | Users' organizations, memberships, invitations, tokens, sessions, API keys, incidents, alerts, settings |
+| `app/models/monitoring.py` | Data centers, racks, servers, raw telemetry (time series), 5-minute buckets, predictions, model records, alert rules, notifications |
+| `app/migrations/` | Versioned data migrations (`python -m app.migrations status` or `upgrade`) |
+| `app/routers/` | HTTP only: validation, permissions, response shape |
+| `app/services/` | Business logic: `telemetry` (ingest), `pipeline` (inference flow), `incidents` (dedup/correlation), `alerts` (rules, notifications), `reports`, `demo`, `infrastructure` |
+| `app/ml/` | `features.py` (shared by training and serving), `inference.py` (loaded once), `diagnostics.py` (root-cause rules), `trees.py` (numpy scorer), `training/` |
+| `app/ml/artifacts/` | `model_bundle.json.gz`, `evaluation.json`, `MODEL_CARD.md` |
 
-Responses use the shape `{success, data, message, code, fields, timestamp}`. Errors carry a stable `code`, for example `invalid_credentials`, `rate_limited`, `csrf_failed`, `forbidden`, `no_org`, `token_expired`, or `validation_error` with per-field messages.
+## Inference flow
 
-## Sending metrics
+`POST /api/v1/telemetry/ingest` (API key) → validation (ranges, timezone-aware timestamps no older than 24 h and at most 5 min ahead)
+→ raw point + 5-minute bucket in MongoDB → when a bucket completes: features over the last 24 h → Isolation Forest + experimental
+early warning → predictions stored (log + current) → server assessment → alerts (one per condition, auto-cleared) → automatic
+incidents (deduplicated per server and category, correlated per rack, reopened within 30 min) → websocket event to the org.
 
-1. Create a key in **Integrations → API keys**. It needs the `metrics:write` scope.
-2. Send readings:
+## API (all under /api/v1, organization-scoped)
+
+| Area | Endpoints |
+| --- | --- |
+| Telemetry | `POST /telemetry/ingest` (API key; one point or `{points: [...]}`), `GET /telemetry/health`, legacy `POST /metrics` |
+| Infrastructure | `GET /infrastructure`, `GET/POST /servers`, `GET/PATCH/DELETE /servers/{id}`, `GET /servers/{id}/metrics`, `GET /metrics/fleet`, `POST/PATCH/DELETE /datacenters`, `/racks` |
+| Incidents | `GET/POST /incidents`, `GET/PATCH /incidents/{id}`, `POST /incidents/{id}/actions` |
+| Predictions | `GET /predictions` (`?history=true` for the log), `POST /predictions/run`, `GET /predictions/{id}`, `GET /ml/status` |
+| Alerts | `GET /alerts`, `POST /alerts/{id}/actions`, `GET/PUT/DELETE /alert-rules/{id}`, `PUT /notification-settings`, `GET /notifications` |
+| Reports | `GET /reports/summary?start=&end=` |
+| System | `GET /health/ready`, `GET /integrations/status` |
+| Accounts | `/auth/*`, `/invitations/*`, `/me/*`, `/orgs/switch`, `/onboarding/*`, `/org`, `/team/*`, `/api-keys`, `GET /workspace` |
+
+Responses use `{success, data, message, timestamp}`; errors add a stable `code` and per-field `fields`.
+
+## Retraining the model
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/metrics \
-  -H "X-API-Key: $VAULTWATCH_API_KEY" -H "Content-Type: application/json" \
-  -d '{"server_id":"srv-01","hostname":"web-01","cpu_pct":42.1,"ram_pct":61.0,"temp_celsius":48.5}'
+pip install -r requirements-ml.txt
+python -m app.ml.training.train          # reads ../dc-ml/datasets/nab, writes app/ml/artifacts/
 ```
 
-Servers that report this way appear in the organization's Infrastructure view, unless the sample environment is loaded.
+Restart the API to load the new bundle (or set `ML_MODEL_PATH`). See `app/ml/artifacts/MODEL_CARD.md` for data, evaluation and limitations.

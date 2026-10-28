@@ -99,7 +99,7 @@ async def signup(body: SignupIn, request: Request):
     await user.insert()
     org = await new_organization(body.company)
     await Membership(org_id=org.id, user_id=str(user.id), role="owner").insert()
-    await wsvc.replace_with_empty(org.id)
+    await wsvc.ensure_settings(org.id)
     await send_verification(user)
     return success_response({"session": None, "verificationRequired": True})
 
@@ -352,10 +352,13 @@ async def complete_onboarding(body: OnboardingIn, ctx: OrgContext = Depends(requ
     org.monitoring_mode = body.monitoringMode
     await org.save()
     infra = body.infrastructure
+    await wsvc.ensure_settings(org.id)
     if body.monitoringMode == "demo":
-        await wsvc.replace_with_sample(org.id, user.full_name, infra.dataCenterName, infra.environmentName)
+        from app.services import demo
+
+        await demo.seed(org, user.full_name, infra.dataCenterName, infra.environmentName)
     else:
-        await wsvc.replace_with_empty(org.id, infra.dataCenterName, infra.environmentName)
+        await wsvc.setup_live(org.id, infra.dataCenterName, infra.environmentName)
     for inv in body.invites:
         email = normalize_email(inv.email)
         if inv.role == "owner" or email == user.email:

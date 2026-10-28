@@ -13,20 +13,21 @@ import type {
   UserSession, Workspace,
 } from '@/types/domain';
 import {
-  ApiError, type ApiClient, type BackendHealth, type ContactInput, type CreatedApiKey, type IncidentAction,
+  ApiError, type ApiClient, type BackendHealth, type ContactInput, type CreatedApiKey, type IncidentAction, type IntegrationStatus,
   type LoginInput, type OnboardingInput, type SignupInput, type SignupResult, type TokenState, type VerifyResult,
 } from './types';
 import {
   analysisFor, buildAlerts, buildIncidents, buildInfrastructure, buildPredictions, defaultAlertRules, defaultMonitoring,
-  defaultNotificationSettings, demoDataCenters, demoModel,
+  defaultNotificationSettings, demoDataCenters, demoModel, sampleLogs, sampleMetricSeries,
 } from '@/data/demo';
+import { mockReportSummary } from '@/utils/analytics';
 import { randomId, randomToken, sha256 } from '@/utils/random';
 import { can, assignableRoles, canManageMember, type Permission } from '@/utils/permissions';
 import { config } from '@/config/env';
 
 const DB_KEY = 'vw-mock-db';
 const SESSION_KEY = 'vw-mock-session';
-const DB_VERSION = 3;
+const DB_VERSION = 4; // 4: prediction schema with anomaly scores, telemetry health
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
@@ -168,13 +169,14 @@ export function sampleWorkspace(owner = 'System', dcName?: string, envName?: str
     servers,
     incidents: buildIncidents(servers, now, owner),
     predictions: buildPredictions(servers, now),
-    model: demoModel(now),
+    model: demoModel(),
     alerts: buildAlerts(now),
     alertRules: defaultAlertRules.map((r) => ({ ...r })),
     notificationSettings: { ...defaultNotificationSettings },
     monitoring: { ...defaultMonitoring },
     apiKeys: [],
     audit: [],
+    telemetry: { status: 'demo', lastReceivedAt: null, serversReporting: 0, serversTotal: 0, demoServers: servers.length, acceptedLastHour: 0, rejectedLastHour: 0, accepted24h: 0, rejected24h: 0, lastError: null },
     sample: true,
   };
 }
@@ -193,6 +195,7 @@ function emptyWorkspace(dcName?: string, envName?: string): Omit<Workspace, 'mem
     monitoring: { ...defaultMonitoring },
     apiKeys: [],
     audit: [],
+    telemetry: { status: 'waiting', lastReceivedAt: null, serversReporting: 0, serversTotal: 0, demoServers: 0, acceptedLastHour: 0, rejectedLastHour: 0, accepted24h: 0, rejected24h: 0, lastError: null },
     sample: false,
   };
 }
@@ -770,6 +773,17 @@ export const mockApi: ApiClient = {
       case 'comment':
         add('comment', action.message);
         break;
+      case 'severity':
+        add('severity', `Severity changed from ${inc.severity} to ${action.severity}.`);
+        inc.severity = action.severity;
+        break;
+      case 'confirm_root_cause':
+        inc.analysis = { ...inc.analysis, rootCause: action.rootCause, rootCauseStatus: 'confirmed', confirmedBy: user.name, confirmedAt: now };
+        add('ai', `Root cause confirmed: ${action.rootCause}`);
+        break;
+      case 'refresh_analysis':
+        add('ai', 'Sample analysis kept: no model runs in browser-only demo mode.');
+        break;
     }
     inc.updatedAt = now;
     audit(ws, user.name, `${action.type} ${id}`);
@@ -928,6 +942,67 @@ export const mockApi: ApiClient = {
   async loadSampleEnvironment() {
     await delay(400);
     await loadSampleEnvironment();
+  },
+
+  async removeSampleEnvironment() {
+    await delay(300);
+    const { db, org, user } = await requireOrg('infra:manage');
+    const prev = db.workspaces[org.id]!;
+    const next = emptyWorkspace();
+    next.apiKeys = prev.apiKeys;
+    next.alertRules = prev.alertRules;
+    next.notificationSettings = prev.notificationSettings;
+    next.monitoring = prev.monitoring;
+    next.audit = prev.audit;
+    audit(next, user.name, 'Removed the sample environment');
+    db.workspaces[org.id] = next;
+    org.monitoringMode = 'later';
+    save(db);
+  },
+
+  async getIntegrationStatus(): Promise<IntegrationStatus> {
+    await delay(150);
+    const { ws } = await requireOrg();
+    return {
+      status: 'unavailable', database: 'unreachable', model: { ready: false, version: null, error: 'Browser-only demo mode: no backend or model.' },
+      telemetry: ws.telemetry, email: { backend: 'mock', delivers: false }, slack: { configured: false }, pagerduty: { configured: false },
+      logs: { configured: false }, billing: { configured: false },
+    };
+  },
+
+  async getMetrics(serverId, window, metrics) {
+    await delay(150);
+    const { ws } = await requireOrg();
+    const server = serverId ? ws.servers.find((s) => s.id === serverId) : undefined;
+    if (serverId && !server) throw new ApiError(404, 'Server not found.');
+    return sampleMetricSeries(server ?? null, ws.servers, window, metrics);
+  },
+
+  async getIncidentContext(id, window) {
+    await delay(150);
+    const { ws } = await requireOrg();
+    const incident = ws.incidents.find((i) => i.id === id);
+    if (!incident) throw new ApiError(404, 'Incident not found.');
+    const server = ws.servers.find((s) => s.id === incident.serverIds[0]);
+    return clone({
+      incident,
+      alerts: ws.alerts.filter((a) => a.serverId && incident.serverIds.includes(a.serverId)),
+      predictions: ws.predictions.filter((p) => incident.serverIds.includes(p.serverId)),
+      metrics: server ? sampleMetricSeries(server, ws.servers, window, ['cpu', 'memory', 'temperature', 'network']) : null,
+      logs: { connected: false, lines: ws.sample ? sampleLogs(incident, server) : [], note: 'Sample log lines (browser-only demo mode).' },
+    });
+  },
+
+  async runPredictions() {
+    await delay(300);
+    await requireOrg('predictions:run');
+    return { servers: 0, scored: 0, skipped: 0, modelVersion: null };
+  },
+
+  async getReportSummary(from, to) {
+    await delay(150);
+    const { ws } = await requireOrg('reports:export');
+    return mockReportSummary(ws, from, to);
   },
 
   async submitContact(_input: ContactInput) {

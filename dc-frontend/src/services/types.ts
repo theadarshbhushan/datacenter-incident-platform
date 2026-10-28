@@ -1,7 +1,7 @@
 import type {
   AlertRule, ApiKey, IncidentStatus, InvitationDetails, MailMessage, MonitoringSettings, NewIncidentInput,
   NotificationSettings, Organization, PlanId, Role, Session, User, UserPreferences, UserSession, Workspace,
-  Incident, Alert, Member, Invitation,
+  Incident, Alert, Member, Invitation, IncidentContext, MetricKey, MetricSeries, ReportSummary, Severity, TelemetryHealth,
 } from '@/types/domain';
 
 export class ApiError extends Error {
@@ -46,13 +46,33 @@ export type IncidentAction =
   | { type: 'status'; status: IncidentStatus }
   | { type: 'resolve'; note?: string }
   | { type: 'reopen'; reason?: string }
-  | { type: 'comment'; message: string };
+  | { type: 'comment'; message: string }
+  | { type: 'severity'; severity: Severity }
+  | { type: 'confirm_root_cause'; rootCause: string }
+  | { type: 'refresh_analysis' };
 
 export interface ContactInput { name: string; email: string; company: string; subject: string; message: string }
 
 export interface BackendHealth { reachable: boolean; status?: string; version?: string; latencyMs?: number; error?: string }
 
 export interface CreatedApiKey { key: ApiKey; secret: string }
+
+export interface PredictionRunResult { servers: number; scored: number; skipped: number; modelVersion: string | null }
+
+export interface IntegrationStatus {
+  status: 'ready' | 'degraded' | 'unavailable';
+  database: 'ok' | 'unreachable';
+  model: { ready: boolean; version: string | null; error?: string | null };
+  telemetry: TelemetryHealth;
+  email: { backend: string; delivers: boolean };
+  slack: { configured: boolean };
+  pagerduty: { configured: boolean };
+  logs: { configured: boolean };
+  billing: { configured: boolean };
+}
+
+/** Fired by the HTTP client when the server says the session is gone; AuthContext signs the user out. */
+export const SESSION_EXPIRED_EVENT = 'vw:session-expired';
 
 export interface ApiClient {
   mode: 'mock' | 'api';
@@ -109,6 +129,16 @@ export interface ApiClient {
   checkBackendHealth(): Promise<BackendHealth>;
   /** Replace the current organization's infrastructure with clearly labeled sample data. */
   loadSampleEnvironment(): Promise<void>;
+  /** Remove every sample row from the current organization. Real data is not touched. */
+  removeSampleEnvironment(): Promise<void>;
+  getIntegrationStatus(): Promise<IntegrationStatus>;
+
+  // Telemetry, model output and reports
+  /** 5-minute averages. serverId null = fleet average across the organization. */
+  getMetrics(serverId: string | null, window: MetricSeries['window'], metrics: MetricKey[]): Promise<MetricSeries>;
+  getIncidentContext(id: string, window: '1h' | '6h' | '24h'): Promise<IncidentContext>;
+  runPredictions(): Promise<PredictionRunResult>;
+  getReportSummary(from: number, to: number): Promise<ReportSummary>;
 
   // Public
   submitContact(input: ContactInput): Promise<{ delivered: boolean }>;

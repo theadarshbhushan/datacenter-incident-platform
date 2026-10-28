@@ -12,7 +12,7 @@ import { Faq } from './sections/Faq';
 
 const features = [
   { icon: Activity, title: 'Incident management', text: 'Triage, assign, acknowledge and resolve incidents with a full timeline and action history.' },
-  { icon: BrainCircuit, title: 'Predictive analytics', text: 'Risk scores per server and rack across 6-hour to 7-day horizons, with model confidence shown separately.' },
+  { icon: BrainCircuit, title: 'Predictive analytics', text: 'Anomaly detection per server against its own baseline, plus an experimental one-hour early warning.' },
   { icon: Radar, title: 'Anomaly detection', text: 'Spot unusual CPU, memory, thermal, power and network behavior before thresholds trip.' },
   { icon: ScanSearch, title: 'Root-cause analysis', text: 'Probable cause, contributing factors and remediation steps attached to each incident.' },
   { icon: Server, title: 'Infrastructure monitoring', text: 'Rack and server views with temperature, power, utilization and connectivity.' },
@@ -120,8 +120,8 @@ export default function Landing() {
             <h2 className="mt-2 text-3xl font-bold text-ink">Know what will break, how sure we are, and what to do about it</h2>
             <p className="mt-4 text-ink-muted">Every prediction separates two numbers that are easy to confuse:</p>
             <ul className="mt-5 space-y-4">
-              <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-brand" /><span className="text-sm text-ink"><strong>Incident probability</strong> is the estimated chance of a failure within the chosen horizon.</span></li>
-              <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-brand" /><span className="text-sm text-ink"><strong>Model confidence</strong> tells you how reliable that estimate is, given data quality and similarity to past incidents.</span></li>
+              <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-brand" /><span className="text-sm text-ink"><strong>Anomaly score</strong> ranks how unusual a server is right now. It is not a probability.</span></li>
+              <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-brand" /><span className="text-sm text-ink"><strong>Confidence</strong> tells you how much history backs the result, and suspected causes stay suspected until your team confirms them.</span></li>
               <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-brand" /><span className="text-sm text-ink"><strong>Contributing factors</strong> and <strong>remediation steps</strong> explain the score so engineers can act on it.</span></li>
             </ul>
             <ButtonLink to="/features#predictive-analytics" variant="secondary" className="mt-7">How predictions work</ButtonLink>

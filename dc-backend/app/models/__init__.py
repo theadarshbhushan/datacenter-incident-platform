@@ -1,7 +1,7 @@
+from app.models.account import ACCOUNT_MODELS
+from app.models.monitoring import MONITORING_MODELS
 from app.models.user import User
-from app.models.server import Server
-from app.models.metric import Metric
-from app.models.incident import Incident
-from app.models.alert import Alert
 
-__all__ = ["User", "Server", "Metric", "Incident", "Alert"]
+ALL_MODELS = [User, *ACCOUNT_MODELS, *MONITORING_MODELS]
+
+__all__ = ["ALL_MODELS"]

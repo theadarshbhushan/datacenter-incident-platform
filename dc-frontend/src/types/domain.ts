@@ -90,6 +90,7 @@ export interface DataCenter {
   name: string;
   location: string;
   environment: string;
+  sample?: boolean;
 }
 
 export interface Rack {
@@ -98,10 +99,15 @@ export interface Rack {
   dcId: string;
   row: string;
   position: number;
-  powerKw: number;
+  /** Sum of reported server power draw; null when no server reports power. */
+  powerKw: number | null;
   powerCapacityKw: number;
-  inletTemp: number;
+  /** Not measured by the agent; null unless an integration provides it. */
+  inletTemp: number | null;
+  /** Hottest server reading in the rack. */
+  maxTemp?: number | null;
   status: HealthStatus;
+  sample?: boolean;
 }
 
 export interface Server {
@@ -113,15 +119,26 @@ export interface Server {
   role: string;
   ip: string;
   model: string;
-  cpu: number;
-  memory: number;
-  storage: number;
-  temperature: number;
-  powerW: number;
-  networkLatencyMs: number;
+  /** Latest readings. null means the server does not report that metric. */
+  cpu: number | null;
+  memory: number | null;
+  storage: number | null;
+  temperature: number | null;
+  powerW: number | null;
+  networkLatencyMs: number | null;
+  networkMbps?: number | null;
+  diskIoMbps?: number | null;
   connectivity: 'online' | 'degraded' | 'offline';
   status: HealthStatus;
   uptimeDays: number;
+  agentId?: string;
+  lastSeenAt?: string | null;
+  source?: 'agent' | 'manual' | 'demo';
+  sample?: boolean;
+  /** Latest anomaly score (percentile, 0-1). Not a probability. */
+  anomalyScore?: number | null;
+  assessment?: 'normal' | 'warning' | 'critical' | 'insufficient_data';
+  assessedAt?: string | null;
 }
 
 export interface TimelineEvent {
@@ -134,12 +151,21 @@ export interface TimelineEvent {
 
 export interface AIAnalysis {
   summary: string;
+  /** Suspected until a person confirms it on the incident. */
   rootCause: string;
-  rootCauseConfidence: number;
-  contributingFactors: { label: string; weight: number }[];
+  rootCauseStatus?: 'suspected' | 'confirmed' | 'unknown';
+  evidenceStrength?: 'none' | 'moderate' | 'strong';
+  evidence?: string[];
+  /** Only present on sample analyses (illustrative text, not computed). */
+  rootCauseConfidence?: number;
+  contributingFactors: { label: string; weight: number; value?: string }[];
   remediation: string[];
   relatedIncidentIds: string[];
-  generatedBy: 'sample' | 'model';
+  generatedBy: 'sample' | 'rules' | 'model';
+  generatedAt?: string;
+  modelVersion?: string | null;
+  confirmedBy?: string;
+  confirmedAt?: string;
 }
 
 export interface Incident {
@@ -161,6 +187,7 @@ export interface Incident {
   source: 'ai' | 'rule' | 'manual';
   timeline: TimelineEvent[];
   analysis: AIAnalysis;
+  sample?: boolean;
 }
 
 export interface NewIncidentInput {
@@ -173,30 +200,64 @@ export interface NewIncidentInput {
   assigneeId: string | null;
 }
 
-export type PredictionHorizon = '6h' | '24h' | '72h' | '7d';
+export type PredictionHorizon = 'now' | '1h' | '6h' | '24h' | '72h' | '7d';
 
+export interface PredictionFactor { label: string; metric?: string | null; weight: number; value: string }
+
+/**
+ * Model output for one server.
+ * - kind "anomaly": detects unusual behavior now (horizon "now"). anomalyScore is a percentile, NOT a probability.
+ * - kind "early_warning": experimental forecast of a metric surge in the next hour. riskScore is the model output;
+ *   probability is only set when the model's calibration passed its held-out test.
+ * - severity is an operating decision from fixed thresholds; confidence describes how much data backs the result.
+ */
 export interface Prediction {
   id: string;
   serverId: string;
   rackId: string;
   dcId: string;
+  kind: 'anomaly' | 'early_warning';
   type: string;
-  probability: number;
-  confidence: number;
+  category: IncidentCategory;
+  metric: string | null;
+  severity: 'normal' | 'warning' | 'critical';
+  anomalyScore: number | null;
+  riskScore: number | null;
+  probability: number | null;
+  probabilityCalibrated: boolean;
   horizon: PredictionHorizon;
-  expectedAt: string;
-  factors: { label: string; weight: number; value: string }[];
+  confidence: 'low' | 'medium' | 'high';
+  confidenceReason: string;
+  factors: PredictionFactor[];
   recommendation: string;
+  modelVersion: string;
+  experimental: boolean;
   generatedAt: string;
+  dataTime: string;
+  expectedAt: string | null;
   sample: boolean;
 }
 
+export interface ModelEvaluationPoint { precision: number; recall: number; f1: number; false_positive_rate: number; windows_detected: number; windows_total: number; false_alarm_episodes_per_day: number }
+
 export interface ModelInfo {
   name: string;
-  version: string;
-  confidence: number;
-  trainedAt: string;
+  version: string | null;
+  trainedAt: string | null;
+  ready: boolean;
+  error?: string;
+  /** True only for the browser-only demo (VITE_API_MODE=mock), where no model runs. */
   sample: boolean;
+  earlyWarning?: { available: boolean; experimental: boolean; probabilityCalibrated: boolean; horizonMinutes: number };
+  evaluation?: {
+    anomaly_loso_at_warning?: ModelEvaluationPoint;
+    anomaly_loso_at_critical?: ModelEvaluationPoint;
+    anomaly_loso_alert_rule?: ModelEvaluationPoint;
+    anomaly_pr_auc_pooled?: number;
+    early_warning?: { pr_auc: number; base_rate: number; brier_skill_score: number; expected_calibration_error: number } | null;
+    early_warning_status?: string;
+    probability_is_calibrated?: boolean;
+  };
 }
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
@@ -211,6 +272,8 @@ export interface Alert {
   ruleId: string | null;
   createdAt: string;
   acknowledgedBy: string | null;
+  lastSeenAt?: string;
+  sample?: boolean;
 }
 
 export interface AlertRule {
@@ -281,6 +344,59 @@ export interface MailMessage {
   createdAt: string;
 }
 
+export interface TelemetryHealth {
+  /** live: real telemetry in the last 5 minutes. stale: had telemetry, none recently. demo: sample data only. waiting: nothing yet. */
+  status: 'live' | 'stale' | 'demo' | 'waiting';
+  lastReceivedAt: string | null;
+  serversReporting: number;
+  serversTotal: number;
+  demoServers: number;
+  acceptedLastHour: number;
+  rejectedLastHour: number;
+  accepted24h: number;
+  rejected24h: number;
+  lastError: string | null;
+}
+
+export type MetricKey = 'cpu' | 'memory' | 'storage' | 'disk_io' | 'network' | 'temperature' | 'power' | 'latency';
+
+export interface MetricSeries {
+  window: '1h' | '6h' | '24h' | '7d';
+  bucketSeconds: number;
+  from: string;
+  to: string;
+  metrics: MetricKey[];
+  servers: number;
+  points: ({ at: string } & Partial<Record<MetricKey, number | null>>)[];
+  sample?: boolean;
+}
+
+export interface IncidentContext {
+  incident: Incident;
+  alerts: Alert[];
+  predictions: Prediction[];
+  metrics: MetricSeries | null;
+  logs: { connected: boolean; lines: { at: string; level: string; host: string; msg: string }[]; note: string };
+}
+
+export interface ReportSummary {
+  from: string;
+  to: string;
+  generatedAt: string;
+  sample: boolean;
+  incidents: {
+    created: number; resolved: number; activeNow: number;
+    bySeverity: Partial<Record<Severity, number>>; byCategory: Partial<Record<IncidentCategory, number>>;
+    byStatus: Partial<Record<IncidentStatus, number>>; bySource: Partial<Record<Incident['source'], number>>;
+    mttrMinutes: number | null; mttaMinutes: number | null; downtimeMinutes: number;
+  };
+  uptime: { estimated: number; servers: number; definition: string };
+  daily: { date: string; critical: number; major: number; minor: number; uptime: number }[];
+  alerts: { created: number; bySeverity: Partial<Record<AlertSeverity, number>>; byStatus: Record<string, number> };
+  servers: { total: number; byStatus: Partial<Record<HealthStatus, number>> };
+  predictions: { current: number; anomaliesBySeverity: Record<string, number>; earlyWarningsFlagged: number };
+}
+
 export interface Workspace {
   dataCenters: DataCenter[];
   racks: Rack[];
@@ -296,5 +412,6 @@ export interface Workspace {
   members: Member[];
   invitations: Invitation[];
   audit: AuditEntry[];
+  telemetry: TelemetryHealth;
   sample: boolean;
 }

@@ -6,15 +6,14 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { api, errorMessage } from '@/services/api';
-import type { BackendHealth, CreatedApiKey } from '@/services/types';
+import type { BackendHealth, CreatedApiKey, IntegrationStatus } from '@/services/types';
 import type { ApiKey } from '@/types/domain';
 import { config, isMock } from '@/config/env';
 import { timeAgo } from '@/utils/format';
 
+// Only scopes the backend enforces are offered.
 const scopes = [
-  { id: 'metrics:write', label: 'Write metrics' },
-  { id: 'incidents:write', label: 'Create incidents' },
-  { id: 'read', label: 'Read data' },
+  { id: 'metrics:write', label: 'Send telemetry' },
 ];
 
 const placeholders = [
@@ -42,7 +41,13 @@ export default function Integrations() {
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [loadingSample, setLoadingSample] = useState(false);
 
-  const check = async () => { setChecking(true); setHealth(await api.checkBackendHealth()); setChecking(false); };
+  const [status, setStatus] = useState<IntegrationStatus | null>(null);
+  const check = async () => {
+    setChecking(true);
+    setHealth(await api.checkBackendHealth());
+    if (!isMock) { try { setStatus(await api.getIntegrationStatus()); } catch { setStatus(null); } }
+    setChecking(false);
+  };
   useEffect(() => { void check(); }, []);
 
   const createKey = async () => {
@@ -53,7 +58,14 @@ export default function Integrations() {
     catch (e) { setNameErr(errorMessage(e)); } finally { setBusy(false); }
   };
 
-  const ingestUrl = `${config.apiUrl || window.location.origin}/api/v1/metrics`;
+  const ingestUrl = `${config.apiUrl || window.location.origin}/api/v1/telemetry/ingest`;
+  const t = ws.telemetry;
+  const telemetryLine = {
+    live: `Live: ${t.serversReporting} of ${t.serversTotal} servers reported in the last 5 minutes.`,
+    stale: `No telemetry since ${timeAgo(t.lastReceivedAt)}. Check that your agents are running.`,
+    demo: 'Sample telemetry only. Real telemetry replaces the sample environment when it arrives.',
+    waiting: 'No telemetry received yet. Monitoring is not active until an agent reports.',
+  }[t.status];
 
   return (
     <div>
@@ -72,6 +84,14 @@ export default function Integrations() {
             ) : (
               <Callout tone={isMock ? 'info' : 'error'} title="Backend not reachable">{health.error}</Callout>
             )}
+            {status && (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                <dt className="text-ink-muted">Database</dt><dd className={status.database === 'ok' ? 'text-brand-700' : 'text-critical'}>{status.database === 'ok' ? 'Connected' : 'Unreachable'}</dd>
+                <dt className="text-ink-muted">ML model</dt><dd className={status.model.ready ? 'text-brand-700' : 'text-critical'} title={status.model.error ?? undefined}>{status.model.ready ? status.model.version : 'Not loaded'}</dd>
+                <dt className="text-ink-muted">Email</dt><dd className="text-ink">{status.email.delivers ? 'SMTP delivery' : 'Not delivered (console backend)'}</dd>
+                <dt className="text-ink-muted">Slack / PagerDuty</dt><dd className="text-ink">{status.slack.configured ? 'Slack set' : 'Slack not set'} · {status.pagerduty.configured ? 'PagerDuty set' : 'PagerDuty not set'}</dd>
+              </dl>
+            )}
             {isMock && <p className="text-xs text-ink-muted">To use the real backend set <code className="rounded bg-canvas px-1">VITE_API_MODE=api</code> and run <code className="rounded bg-canvas px-1">uvicorn app.main:app</code> in dc-backend.</p>}
           </div>
         </Card>
@@ -79,13 +99,16 @@ export default function Integrations() {
         <Card>
           <CardHeader title="Monitoring agents and ingestion" description="Send metrics with an API key" />
           <div className="space-y-3 p-5">
-            <p className="text-sm text-ink-muted">Status: {ws.servers.length ? <span className="font-medium text-ink">{ws.servers.length} servers {ws.sample ? '(sample data)' : 'reporting'}</span> : <span className="font-medium text-ink">no servers reporting</span>}</p>
+            <p className={`text-sm ${t.status === 'live' ? 'text-brand-700' : t.status === 'stale' ? 'text-warning' : 'text-ink-muted'}`}>{telemetryLine}</p>
+            {!isMock && t.status !== 'demo' && <p className="text-xs text-ink-muted">Last hour: {t.acceptedLastHour} points accepted, {t.rejectedLastHour} rejected{t.lastError ? ` (last error: ${t.lastError})` : ''}.</p>}
             <pre className="overflow-x-auto rounded-lg bg-[#0F1A14] p-3 font-mono text-xs leading-5 text-[#D6E4DA]">{`curl -X POST ${ingestUrl} \\
   -H "X-API-Key: $VAULTWATCH_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"server_id":"srv-01","cpu_pct":42.1,"ram_pct":61.0,"temp_celsius":48.5}'`}</pre>
-            <p className="text-xs text-ink-muted">The dc-ingestion service in this repository can replay realistic telemetry to this endpoint for testing.</p>
-            {can('infra:manage') && !ws.sample && (
+  -d '{"serverId":"web-01","hostname":"web-01","rack":"A01",
+       "timestamp":"${new Date().toISOString()}",
+       "metrics":{"cpu":42.1,"memory":61.0,"temperature":48.5,"power":410}}'`}</pre>
+            <p className="text-xs text-ink-muted">Send one point or {'{"points": [...]}'} (up to 500) every 15–60 seconds. Units: percent for cpu, memory and storage; °C, W, ms, Mb/s and MB/s for the rest. The agent in dc-ingestion/agent.py reports this machine&apos;s real CPU, memory, disk and network.</p>
+            {can('infra:manage') && !ws.sample && ws.servers.length === 0 && (
               <Button size="sm" variant="secondary" icon={<FlaskConical className="h-4 w-4" />} loading={loadingSample}
                 onClick={async () => { setLoadingSample(true); try { await api.loadSampleEnvironment(); await reload(); toast.success('Sample environment loaded'); } catch (e) { toast.error('Could not load sample', errorMessage(e)); } finally { setLoadingSample(false); } }}>
                 Load sample environment

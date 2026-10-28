@@ -7,10 +7,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
+  # API process metrics (request rates, latencies) exposed by dc-backend at /metrics.
   - job_name: 'backend'
     static_configs:
-      - targets: ['backend:8000']
-
-  - job_name: 'ml-service'
-    static_configs:
-      - targets: ['ml-service:8001']
+      - targets: ['dc-backend:8000']

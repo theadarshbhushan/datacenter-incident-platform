@@ -4,7 +4,7 @@ import { Logo } from '@/components/ui';
 import { MockBanner } from './MockBanner';
 
 const points = [
-  { icon: BrainCircuit, title: 'Predict failures early', text: 'Risk scores with model confidence for every server and rack.' },
+  { icon: BrainCircuit, title: 'Catch problems early', text: 'Anomaly detection on every server, with the evidence behind each alert.' },
   { icon: Activity, title: 'Resolve incidents faster', text: 'Timelines, probable root cause and remediation steps in one place.' },
   { icon: ShieldCheck, title: 'Built for operations teams', text: 'Roles, audit history and organization-scoped data.' },
 ];

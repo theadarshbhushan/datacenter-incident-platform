@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Role, Session } from '@/types/domain';
 import { api } from '@/services/api';
-import type { LoginInput, SignupInput } from '@/services/types';
+import { SESSION_EXPIRED_EVENT, type LoginInput, type SignupInput } from '@/services/types';
 import { can, type Permission } from '@/utils/permissions';
 
 interface AuthState {
@@ -37,6 +37,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // The server rejected the session (expired, revoked, or signed out elsewhere): drop it so the
+  // route guards send the user to /login with their current page as `next`.
+  useEffect(() => {
+    const onExpired = () => setSession(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
   const value = useMemo<AuthState>(() => ({
     session,

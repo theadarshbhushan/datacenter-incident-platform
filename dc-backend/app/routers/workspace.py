@@ -12,67 +12,33 @@ from app.core.config import settings
 from app.core.errors import ApiException, forbidden, not_found
 from app.core.mailer import send_email
 from app.core.permissions import assignable_roles, can_manage_member
+from app.core.timeutil import iso
 from app.core.tokens import hash_token, new_token
-from app.models.account import (
-    ApiKey, ContactMessage, DevMail, Invitation, Membership, OrgWorkspace, UserSession, WorkspaceAlert, WorkspaceIncident, new_id,
-)
+from app.models.account import ApiKey, ContactMessage, DevMail, Invitation, Membership, UserSession, WorkspaceIncident
 from app.schemas.account import ApiKeyIn, ContactIn, InviteIn, RoleIn
 from app.schemas.response import success_response
 from app.schemas.workspace import AlertActionIn, AlertRuleIn, IncidentAction, MonitoringIn, NewIncidentIn, NotificationSettingsIn
+from app.services import alerts as alert_svc
+from app.services import demo as demo_svc
+from app.services import incidents as incident_svc
 from app.services import workspace as wsvc
 from app.services.accounts import INVITE_TTL, audit, create_invitation, invitation_public, list_members, normalize_email, send_invitation_email
-from app.services.sample_data import analysis_for, iso
 
 router = APIRouter(tags=["Workspace"])
 public = APIRouter(tags=["Public"])
 
 
-def _now() -> str:
-    return iso(datetime.utcnow())
-
-
-async def _incident(ctx: OrgContext, incident_id: str) -> WorkspaceIncident:
-    doc = await WorkspaceIncident.find_one({"org_id": ctx.org_id, "incident_id": incident_id})
-    if not doc:
-        raise not_found("Incident not found.")
-    return doc
-
-
-async def _is_member(org_id: str, user_id: str) -> bool:
-    return await Membership.find_one({"org_id": org_id, "user_id": user_id}) is not None
-
-
-@router.get("/workspace")
+@router.get("/workspace", summary="Everything the app shell needs for the caller's organization, in one call")
 async def get_workspace(ctx: OrgContext = Depends(require_org())):
     return success_response(await wsvc.full_workspace(ctx))
 
 
+# The routes below predate the REST resources (/incidents, /alerts, /alert-rules, ...) and call the same services.
+
 @router.post("/workspace/incidents")
 async def create_incident(body: NewIncidentIn, ctx: OrgContext = Depends(require_org("incident:write"))):
-    ws = await wsvc.get_or_create(ctx.org_id)
-    if body.assigneeId and not await _is_member(ctx.org_id, body.assigneeId):
-        raise ApiException(400, "Assignee is not a member of this organization.", "invalid_assignee")
-    rack = next((r for r in ws.racks if r["id"] == body.rackId), None)
-    year = datetime.utcnow().year
-    rows = await WorkspaceIncident.find(WorkspaceIncident.org_id == ctx.org_id).to_list()
-    max_n = max([int(r.incident_id.rsplit("-", 1)[-1]) for r in rows if r.incident_id.rsplit("-", 1)[-1].isdigit()] or [0])
-    iid = f"INC-{year}-{max_n + 1:04d}"
-    now = _now()
-    inc = {
-        "id": iid, "title": body.title, "description": body.description, "severity": body.severity, "status": "ongoing",
-        "category": body.category, "serverIds": body.serverIds, "rackId": body.rackId,
-        "dcId": rack["dcId"] if rack else (ws.data_centers[0]["id"] if ws.data_centers else ""),
-        "assigneeId": body.assigneeId, "acknowledged": False, "acknowledgedAt": None, "createdAt": now, "updatedAt": now,
-        "resolvedAt": None, "source": "manual",
-        "timeline": [{"id": new_id("t_"), "at": now, "type": "created", "actor": ctx.user.full_name, "message": "Incident created manually."}],
-        # Template guidance for the category, labeled as sample. No model ran.
-        "analysis": analysis_for(body.category),
-    }
-    if body.assigneeId:
-        a = await load_user(body.assigneeId)
-        inc["timeline"].append({"id": new_id("t_"), "at": now, "type": "assigned", "actor": ctx.user.full_name, "message": f"Assigned to {a.full_name if a else 'teammate'}."})
-    await WorkspaceIncident(org_id=ctx.org_id, incident_id=iid, created_at=datetime.utcnow(), data=inc).insert()
-    await audit(ctx.org_id, ctx.user.full_name, f"Created {iid}")
+    inc = await incident_svc.create_manual(ctx.org_id, ctx.user.full_name, body)
+    await audit(ctx.org_id, ctx.user.full_name, f"Created {inc['id']}")
     return success_response(inc)
 
 
@@ -82,101 +48,35 @@ async def incident_action(
     action: Annotated[IncidentAction, Field(discriminator="type")] = Body(...),
     ctx: OrgContext = Depends(require_org("incident:write")),
 ):
-    doc = await _incident(ctx, incident_id)
-    inc = dict(doc.data)
-    inc["timeline"] = list(inc.get("timeline", []))
-    now = _now()
-
-    def add(kind: str, message: str):
-        inc["timeline"].append({"id": new_id("t_"), "at": now, "type": kind, "actor": ctx.user.full_name, "message": message})
-
-    t = action.type
-    if t == "acknowledge":
-        if inc["status"] == "resolved":
-            raise ApiException(400, "Resolved incidents cannot be acknowledged.")
-        inc["acknowledged"], inc["acknowledgedAt"] = True, now
-        if inc["status"] == "ongoing":
-            inc["status"] = "investigating"
-        add("status", "Acknowledged and moved to Investigating.")
-    elif t == "assign":
-        if action.userId and not await _is_member(ctx.org_id, action.userId):
-            raise ApiException(400, "Assignee is not a member of this organization.", "invalid_assignee")
-        inc["assigneeId"] = action.userId
-        a = await load_user(action.userId) if action.userId else None
-        add("assigned", f"Assigned to {a.full_name}." if a else "Unassigned.")
-    elif t == "status":
-        inc["status"] = action.status
-        if action.status == "resolved" and not inc.get("resolvedAt"):
-            inc["resolvedAt"] = now
-        if action.status != "resolved":
-            inc["resolvedAt"] = None
-        add("status", f"Status changed to {action.status}.")
-    elif t == "resolve":
-        if inc["status"] == "resolved":
-            raise ApiException(400, "Incident is already resolved.")
-        inc["status"], inc["resolvedAt"], inc["acknowledged"] = "resolved", now, True
-        inc["acknowledgedAt"] = inc.get("acknowledgedAt") or now
-        add("resolved", f"Resolved: {action.note}" if action.note else "Resolved.")
-    elif t == "reopen":
-        if inc["status"] != "resolved":
-            raise ApiException(400, "Only resolved incidents can be reopened.")
-        inc["status"], inc["resolvedAt"] = "ongoing", None
-        add("reopened", f"Reopened: {action.reason}" if action.reason else "Reopened.")
-    elif t == "comment":
-        add("comment", action.message)
-    inc["updatedAt"] = now
-    doc.data = inc
-    await doc.save()
-    await audit(ctx.org_id, ctx.user.full_name, f"{t} {incident_id}")
+    inc = await incident_svc.apply_action(ctx.org_id, incident_id, ctx.user.full_name, action)
+    await audit(ctx.org_id, ctx.user.full_name, f"{action.type} {incident_id}")
     return success_response(inc)
 
 
 @router.post("/workspace/alerts/{alert_id}/actions")
 async def alert_action(alert_id: str, body: AlertActionIn, ctx: OrgContext = Depends(require_org("alert:act"))):
-    doc = await WorkspaceAlert.find_one({"org_id": ctx.org_id, "alert_id": alert_id})
-    if not doc:
-        raise not_found("Alert not found.")
-    data = dict(doc.data)
-    if body.type == "acknowledge":
-        data["status"], data["acknowledgedBy"] = "acknowledged", ctx.user.full_name
-    else:
-        data["status"] = "dismissed"
-    doc.data = data
-    await doc.save()
-    return success_response(data)
+    return success_response(await alert_svc.act(ctx.org_id, alert_id, body.type, ctx.user.full_name))
 
 
 @router.put("/workspace/alert-rules/{rule_id}")
 async def save_alert_rule(rule_id: str, body: AlertRuleIn, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
-    ws = await wsvc.get_or_create(ctx.org_id)
-    rule = body.model_dump()
-    rule["id"] = rule_id if rule_id != "new" else new_id("rule_")
-    if rule["threshold"] == int(rule["threshold"]):
-        rule["threshold"] = int(rule["threshold"])
-    rules = [r for r in ws.alert_rules if r["id"] != rule["id"]]
-    idx = next((i for i, r in enumerate(ws.alert_rules) if r["id"] == rule["id"]), None)
-    if idx is None:
-        rules.append(rule)
-    else:
-        rules.insert(idx, rule)
-    ws.alert_rules = rules
-    await ws.save()
-    await audit(ctx.org_id, ctx.user.full_name, f'Saved alert rule "{rule["name"]}"')
-    return success_response(rule)
+    rule = await alert_svc.save_rule(ctx.org_id, rule_id, body)
+    await audit(ctx.org_id, ctx.user.full_name, f'Saved alert rule "{rule.name}"')
+    return success_response(alert_svc.rule_public(rule))
 
 
 @router.delete("/workspace/alert-rules/{rule_id}")
 async def delete_alert_rule(rule_id: str, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
-    ws = await wsvc.get_or_create(ctx.org_id)
-    ws.alert_rules = [r for r in ws.alert_rules if r["id"] != rule_id]
-    await ws.save()
+    from app.models.monitoring import AlertRule
+
+    await AlertRule.find({"_id": rule_id, "org_id": ctx.org_id}).delete()
     await audit(ctx.org_id, ctx.user.full_name, "Deleted an alert rule")
     return success_response(None)
 
 
 @router.put("/workspace/notification-settings")
 async def update_notifications(body: NotificationSettingsIn, ctx: OrgContext = Depends(require_org("alertRules:manage"))):
-    ws = await wsvc.get_or_create(ctx.org_id)
+    ws = await wsvc.ensure_settings(ctx.org_id)
     ws.notification_settings = body.model_dump()
     await ws.save()
     await audit(ctx.org_id, ctx.user.full_name, "Updated notification settings")
@@ -185,21 +85,28 @@ async def update_notifications(body: NotificationSettingsIn, ctx: OrgContext = D
 
 @router.put("/workspace/monitoring")
 async def update_monitoring(body: MonitoringIn, ctx: OrgContext = Depends(require_org("monitoring:manage"))):
-    ws = await wsvc.get_or_create(ctx.org_id)
+    ws = await wsvc.ensure_settings(ctx.org_id)
     ws.monitoring = body.model_dump()
     await ws.save()
     await audit(ctx.org_id, ctx.user.full_name, "Updated monitoring settings")
     return success_response(ws.monitoring)
 
 
-@router.post("/workspace/sample-environment")
+@router.post("/workspace/sample-environment", summary="Load the labeled sample environment (refused when real servers exist)")
 async def load_sample(ctx: OrgContext = Depends(require_org("infra:manage"))):
-    prev = await OrgWorkspace.get(ctx.org_id)
-    dc = prev.data_centers[0] if prev and prev.data_centers else {}
-    await wsvc.replace_with_sample(ctx.org_id, ctx.user.full_name, dc.get("name"), dc.get("environment"), keep_settings=True)
+    await wsvc.ensure_settings(ctx.org_id)
+    await demo_svc.seed(ctx.org, ctx.user.full_name)
     ctx.org.monitoring_mode = "demo"
     await ctx.org.save()
     await audit(ctx.org_id, ctx.user.full_name, "Loaded sample environment")
+    return success_response(None)
+
+
+@router.delete("/workspace/sample-environment", summary="Remove every sample row; real data is not touched")
+async def remove_sample(ctx: OrgContext = Depends(require_org("infra:manage"))):
+    if not await demo_svc.has_demo(ctx.org_id):
+        raise ApiException(404, "This organization has no sample data.", "not_found")
+    await demo_svc.clear(ctx.org, ctx.user.full_name)
     return success_response(None)
 
 
@@ -254,7 +161,7 @@ async def remove_member(user_id: str, ctx: OrgContext = Depends(require_org("tea
     await UserSession.find({"user_id": user_id, "org_id": ctx.org_id}).update({"$set": {"org_id": None}})
     for doc in await WorkspaceIncident.find({"org_id": ctx.org_id, "data.assigneeId": user_id}).to_list():
         doc.data = {**doc.data, "assigneeId": None}
-        await doc.save()
+        await doc.sync().save()
     target = await load_user(user_id)
     await audit(ctx.org_id, ctx.user.full_name, f"Removed {target.email if target else user_id}")
     return success_response(None)

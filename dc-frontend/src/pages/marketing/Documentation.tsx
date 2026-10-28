@@ -34,9 +34,9 @@ const docs: Doc[] = [
     ],
   },
   {
-    id: 'predictions', icon: BrainCircuit, title: 'Predictions', summary: 'Understand risk scores, horizons and model confidence.',
+    id: 'predictions', icon: BrainCircuit, title: 'Predictions', summary: 'Understand anomaly scores, early warnings and confidence.',
     articles: [
-      { title: 'Probability vs confidence', body: 'Probability is the chance of an incident within the horizon. Confidence is how reliable the model judges that estimate. Treat high probability with low confidence as a signal to investigate, not a certainty.' },
+      { title: 'Scores, severity and confidence', body: 'The anomaly score ranks how unusual the latest reading is against the server\'s 24-hour baseline; it is not a probability. The early warning is experimental and shows a probability only when calibrated. Confidence reflects how much history is available.' },
       { title: 'Time horizons', body: 'Predictions cover 6 hours, 24 hours, 72 hours and 7 days. Longer horizons are naturally less certain.' },
       { title: 'Sample predictions', body: 'Until a trained model is connected, predictions are sample data and are labeled with a Sample badge.' },
     ],

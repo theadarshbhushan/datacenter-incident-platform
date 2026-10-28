@@ -125,36 +125,64 @@ class OnboardingDraft(Document):
 
 
 class OrgWorkspace(Document):
-    """Infrastructure inventory, predictions and settings of one organization (camelCase API shapes)."""
+    """
+    Per-organization settings: notification channels and monitoring configuration.
+
+    Older versions also embedded data centers, racks, servers, predictions and alert rules here. Migration
+    0002 moves those into their own collections; the legacy fields stay declared so old rows still load.
+    """
 
     id: str  # the organization id
-    data_centers: List[Dict[str, Any]] = Field(default_factory=list)
-    racks: List[Dict[str, Any]] = Field(default_factory=list)
-    servers: List[Dict[str, Any]] = Field(default_factory=list)
-    predictions: List[Dict[str, Any]] = Field(default_factory=list)
-    model: Optional[Dict[str, Any]] = None
-    alert_rules: List[Dict[str, Any]] = Field(default_factory=list)
     notification_settings: Dict[str, Any] = Field(default_factory=dict)
     monitoring: Dict[str, Any] = Field(default_factory=dict)
-    sample: bool = False
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # legacy (read only by migrations)
+    data_centers: Optional[List[Dict[str, Any]]] = None
+    racks: Optional[List[Dict[str, Any]]] = None
+    servers: Optional[List[Dict[str, Any]]] = None
+    predictions: Optional[List[Dict[str, Any]]] = None
+    model: Optional[Dict[str, Any]] = None
+    alert_rules: Optional[List[Dict[str, Any]]] = None
+    sample: Optional[bool] = None
 
     class Settings:
         name = "org_workspaces"
 
 
 class WorkspaceIncident(Document):
+    """
+    An incident. `data` holds the API shape (camelCase, including the timeline, which is the incident
+    history). Top-level fields mirror the parts of it that queries, deduplication and reports need.
+    """
+
     org_id: str
     incident_id: str  # e.g. INC-2026-0135, unique within the organization
     created_at: datetime
     data: Dict[str, Any]
+    status: str = "ongoing"
+    severity: str = "minor"
+    category: str = ""
+    server_ids: List[str] = Field(default_factory=list)
+    rack_id: str = ""
+    resolved_at: Optional[datetime] = None
+    dedup_key: Optional[str] = None       # set for automatically created incidents
+    last_signal_at: Optional[datetime] = None
+    demo: bool = False
 
     class Settings:
         name = "workspace_incidents"
         indexes = [
             pymongo.IndexModel([("org_id", 1), ("incident_id", 1)], unique=True),
             pymongo.IndexModel([("org_id", 1), ("created_at", -1)]),
+            pymongo.IndexModel([("org_id", 1), ("status", 1), ("dedup_key", 1)]),
         ]
+
+    def sync(self) -> "WorkspaceIncident":
+        d = self.data
+        self.status, self.severity, self.category = d["status"], d["severity"], d["category"]
+        self.server_ids, self.rack_id = list(d.get("serverIds", [])), d.get("rackId", "")
+        self.resolved_at = _parse_iso(d.get("resolvedAt"))
+        return self
 
 
 class WorkspaceAlert(Document):
@@ -162,13 +190,29 @@ class WorkspaceAlert(Document):
     alert_id: str
     created_at: datetime
     data: Dict[str, Any]
+    status: str = "active"
+    server_id: Optional[str] = None
+    dedup_key: Optional[str] = None
+    last_seen_at: Optional[datetime] = None
+    demo: bool = False
 
     class Settings:
         name = "workspace_alerts"
         indexes = [
             pymongo.IndexModel([("org_id", 1), ("alert_id", 1)], unique=True),
             pymongo.IndexModel([("org_id", 1), ("created_at", -1)]),
+            pymongo.IndexModel([("org_id", 1), ("status", 1), ("dedup_key", 1)]),
         ]
+
+    def sync(self) -> "WorkspaceAlert":
+        self.status, self.server_id = self.data["status"], self.data.get("serverId")
+        return self
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    from app.core.timeutil import parse_iso
+
+    return parse_iso(value)
 
 
 class AuditEntry(Document):

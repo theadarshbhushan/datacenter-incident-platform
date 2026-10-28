@@ -1,34 +1,24 @@
-# VaultWatch ML Service
+# dc-ml (legacy research models and datasets)
 
-Production-grade machine learning inference service for the VaultWatch Data Center Incident Prediction Platform.
+**The product no longer uses the models in this folder.** The model VaultWatch runs is trained and served from
+`dc-backend/app/ml/` (see `dc-backend/app/ml/artifacts/MODEL_CARD.md`). This folder keeps the datasets that training reads.
 
-## Models
-- **Isolation Forest**: Unsupervised real-time telemetry anomaly detection (87.8% accuracy)
-- **XGBoost + SHAP**: Multivariate 6-class failure root cause classification with TreeExplainer feature attributions (85.7% weighted F1)
-- **Bi-LSTM + Temporal Attention**: Multi-step forward CPU & RAM forecast sequence generator (MAE: 6.77%)
+## Why the earlier models were retired (audit, October 2026)
 
-## Architecture & Endpoints
+- `datasets/processed/*.csv` mix one real metric per series with columns generated from it: RAM, temperature and disk usage
+  were synthesized from CPU plus random noise.
+- The "incident type" labels were threshold rules on those same columns (for example `cpu_pct > 85` → `cpu_spike`), and
+  `thermal_event` was simply NAB's anomaly window renamed. The XGBoost classifier learned those rules back, so its 85.7% F1
+  says nothing about real incidents.
+- Rows were shuffled before the train/test split, so neighbouring 5-minute readings from the same server were on both sides
+  (leakage). The Isolation Forest's "87.8% accuracy" came from that split.
+- There are no future-failure labels, so the Bi-LSTM "forecast" could not be validated as incident prediction.
 
-| Method | Path | Description |
-| :--- | :--- | :--- |
-| `GET` | `/health` | Model readiness, dataset metadata, and benchmark training evaluation metrics |
-| `POST` | `/anomaly/detect` | Combined Isolation Forest + XGBoost prediction with SHAP top feature drivers |
-| `POST` | `/forecast/predict` | 10-step Bi-LSTM predictive sequence with temporal attention weights |
-| `POST` | `/ensemble/predict` | Weighted consensus prediction (IF: 0.35, XGB: 0.40, LSTM: 0.25) with SRE recommendations |
-| `GET` | `/docs` | Interactive Swagger UI API documentation |
+## What is still used
 
-## Quick Start
+- `datasets/nab/*.csv` and `datasets/nab/combined_windows.json`: real AWS CloudWatch series and NAB's human-labeled anomaly
+  windows. `python -m app.ml.training.train` (in dc-backend) reads only these.
+- `scripts/download_datasets.py` (repo root) fetches them again if needed.
 
-```bash
-cd dc-ml
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-uvicorn app.main:app --reload --port 8001
-```
-
-## Model Training & Artifact Generation
-
-To retrain all three models from processed datasets and output new artifacts into `saved_models/`:
-
-```bash
-python ../scripts/train_all_models.py
-```
+The FastAPI service in `app/`, the saved models in `saved_models/` and `scripts/train_all_models.py` / `scripts/preprocess_data.py`
+are kept for reference only and are not started by docker compose.

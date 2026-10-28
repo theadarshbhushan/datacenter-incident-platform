@@ -238,11 +238,3 @@ def require_org(permission: Optional[str] = None) -> Callable:
         return OrgContext(user=ctx.user, session=ctx.session, org=org, role=role)
 
     return dep
-
-
-def require_internal(request: Request) -> None:
-    """Service-to-service routes (legacy telemetry API). Disabled unless INTERNAL_API_TOKEN is set."""
-    expected = settings.INTERNAL_API_TOKEN
-    supplied = request.headers.get("x-internal-token", "")
-    if not expected or not supplied or not safe_equals(supplied, expected):
-        raise ApiException(403, "This endpoint is restricted to internal services.", "internal_only")

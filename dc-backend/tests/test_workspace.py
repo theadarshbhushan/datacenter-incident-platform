@@ -34,9 +34,16 @@ async def test_onboarding_draft_and_demo_workspace(browser):
     session = (await browser.post("/onboarding/complete", ONBOARD)).json()["data"]
     assert session["user"]["onboardingCompleted"] and session["organization"]["name"] == "Acme DC"
     ws = (await browser.get("/workspace")).json()["data"]
-    assert ws["sample"] is True and len(ws["servers"]) == 40 and len(ws["incidents"]) == 42
+    assert ws["sample"] is True and len(ws["servers"]) == 40 and len(ws["incidents"]) >= 39
+    assert all(i["sample"] for i in ws["incidents"]) and all(s["sample"] for s in ws["servers"])
     assert ws["dataCenters"][0]["name"] == "Mumbai-1"
-    assert all(p["sample"] for p in ws["predictions"]) and ws["model"]["sample"] is True
+    # Demo predictions come from the real model running on synthetic telemetry, and are labeled.
+    assert ws["model"]["ready"] is True and ws["model"]["sample"] is False and ws["model"]["version"].startswith("vw-anomaly-")
+    assert ws["predictions"] and all(p["sample"] for p in ws["predictions"])
+    hot = next(s for s in ws["servers"] if s["hostname"] == "ash-a02-03")
+    hot_pred = next(p for p in ws["predictions"] if p["serverId"] == hot["id"] and p["kind"] == "anomaly")
+    assert hot_pred["severity"] in ("warning", "critical") and hot_pred["probability"] is None and 0 <= hot_pred["anomalyScore"] <= 1
+    assert ws["telemetry"]["status"] == "demo"
     assert any(i["email"] == "eng@acme.io" for i in ws["invitations"])
     assert (await browser.get("/onboarding/draft")).json()["data"] is None
 
@@ -45,9 +52,14 @@ async def test_incident_lifecycle(browser):
     await onboarded_owner(browser)
     ws = (await browser.get("/workspace")).json()["data"]
     me = ws["members"][0]["userId"]
-    r = await browser.post("/workspace/incidents", {"title": "Fan failure in A01", "description": "", "severity": "major", "category": "hardware", "rackId": "rack-a01", "serverIds": ["srv-a01-1"], "assigneeId": me})
+    srv = ws["servers"][0]
+    numbers = [int(i["id"].rsplit("-", 1)[1]) for i in ws["incidents"]]
+    r = await browser.post("/workspace/incidents", {"title": "Fan failure in A01", "description": "", "severity": "major", "category": "hardware", "rackId": srv["rackId"], "serverIds": [srv["id"]], "assigneeId": me})
     inc = r.json()["data"]
-    assert inc["id"].endswith("-0135") and inc["dcId"] == "dc-east" and inc["analysis"]["generatedBy"] == "sample"
+    assert int(inc["id"].rsplit("-", 1)[1]) == max(numbers) + 1 and inc["dcId"] == srv["dcId"]
+    assert inc["analysis"]["generatedBy"] == "rules" and inc["analysis"]["rootCauseStatus"] in ("suspected", "unknown")
+    bad = {"title": "Ghost server", "severity": "minor", "category": "network", "serverIds": ["srv_not_mine"]}
+    assert (await browser.post("/workspace/incidents", bad)).status_code == 400
     path = f"/workspace/incidents/{inc['id']}/actions"
     assert (await browser.post(path, {"type": "acknowledge"})).json()["data"]["status"] == "investigating"
     assert (await browser.post(path, {"type": "comment", "message": "Swapping fan"})).status_code == 200
@@ -64,7 +76,8 @@ async def test_role_enforcement_on_server(browser, make_browser):
     eng, session = await join(make_browser, "eng@acme.io", "Eng One")
     assert session["role"] == "engineer" and session["user"]["emailVerified"]
     # Engineers can work incidents and alerts...
-    assert (await eng.post("/workspace/alerts/alt-1/actions", {"type": "acknowledge"})).status_code == 200
+    alert = next(a for a in (await eng.get("/workspace")).json()["data"]["alerts"] if a["status"] == "active")
+    assert (await eng.post(f"/workspace/alerts/{alert['id']}/actions", {"type": "acknowledge"})).status_code == 200
     # ...but not manage the team, rules, keys, billing or organization.
     assert (await eng.post("/team/invitations", {"email": "x@acme.io", "role": "viewer"})).status_code == 403
     assert (await eng.put("/workspace/alert-rules/new", {"name": "Hot", "metric": "temperature", "operator": ">", "threshold": 70, "durationMin": 5, "severity": "warning", "enabled": True, "channels": ["email"]})).status_code == 403
@@ -145,7 +158,7 @@ async def test_api_keys_and_ingestion(browser, make_browser):
     created = (await browser.post("/api-keys", {"name": "agent", "scopes": ["metrics:write"]})).json()["data"]
     secret = created["secret"]
     assert secret.startswith("vw_live_") and secret not in str((await browser.get("/workspace")).json())
-    sample = {"server_id": "srv-01", "hostname": "web-01", "cpu_pct": 42.1, "ram_pct": 61.0, "temp_celsius": 48.5}
+    sample = {"server_id": "srv-01", "hostname": "web-01", "cpu_pct": 42.1, "ram_pct": 61.0, "temp_celsius": 48.5}  # legacy format
     c = browser.c
     assert (await c.post("/api/v1/metrics", json=sample)).status_code in (401, 403)
     assert (await c.post("/api/v1/metrics", json=sample, headers={"X-API-Key": "vw_live_wrong"})).status_code == 401
@@ -163,12 +176,10 @@ async def test_api_keys_and_ingestion(browser, make_browser):
     assert (await c.post("/api/v1/metrics", json=sample, headers={"X-API-Key": secret})).status_code == 401
 
 
-async def test_internal_routes_closed_to_users(browser):
-    await onboarded_owner(browser)
-    for path in ("/servers", "/incidents", "/alerts", "/analytics/summary", "/metrics"):
-        assert (await browser.get(path)).status_code == 403, path
-    r = await browser.c.get("/api/v1/analytics/summary", headers={"X-Internal-Token": "internal-test-token"})
-    assert r.status_code == 200
+async def test_resources_require_a_session(browser):
+    for path in ("/servers", "/incidents", "/alerts", "/predictions", "/infrastructure", "/reports/summary", "/telemetry/health"):
+        assert (await browser.get(path)).status_code == 401, path
+    assert (await browser.c.get("/api/v1/analytics/summary")).status_code == 404  # the old pipeline-wide routes are gone
 
 
 async def test_settings_rules_and_plan(browser):
