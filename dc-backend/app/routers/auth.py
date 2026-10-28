@@ -291,6 +291,12 @@ async def change_password(body: ChangePasswordIn, ctx: AuthContext = Depends(req
     ctx.user.password_changed_at = datetime.utcnow()
     await ctx.user.save()
     await end_all_sessions(str(ctx.user.id), keep_session_id=ctx.session.id)
+    await send_email(
+        ctx.user.email, "Your VaultWatch password was changed",
+        "The password for your account was changed from your profile settings, and other devices were signed out. "
+        "If you did not do this, reset your password now with the link below and contact your administrator.",
+        "/forgot-password",
+    )
     return success_response(None, "Password changed")
 
 

@@ -611,6 +611,7 @@ export const mockApi: ApiClient = {
     user.passwordHash = await hashPassword(next, user.salt);
     // Keep this session, sign out all others.
     db.sessions = db.sessions.filter((x) => x.userId !== user.id || x.id === s.id);
+    pushMail(db, user.email, 'Your VaultWatch password was changed', 'The password for your account was changed from your profile settings, and other devices were signed out. If you did not do this, reset your password now and contact your administrator.', '/forgot-password');
     save(db);
   },
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from app.models.account import AuthToken, UserSession
+from app.models.account import AuthToken, DevMail, UserSession
 from app.models.user import User
 from tests.conftest import PASSWORD, last_link, signup_verified, token_from
 
@@ -100,6 +100,12 @@ async def test_change_password_and_sessions(browser, make_browser):
     assert (await browser.post("/me/password", {"current": PASSWORD, "next": "Brand-New-Pass-9"})).status_code == 200
     assert (await other.get("/auth/session")).status_code == 401
     assert (await browser.get("/auth/session")).status_code == 200
+    # The owner is told by email, with a way back in if it was not them.
+    notice = await DevMail.find(DevMail.to == "ada@acme.io").sort("-created_at").first_or_none()
+    assert notice.subject == "Your VaultWatch password was changed" and notice.link == "/forgot-password"
+    # The old password no longer works and the new one does.
+    assert (await other.post("/auth/login", {"email": "ada@acme.io", "password": PASSWORD})).status_code == 401
+    assert (await other.post("/auth/login", {"email": "ada@acme.io", "password": "Brand-New-Pass-9"})).status_code == 200
 
 
 async def test_profile_update(browser):
