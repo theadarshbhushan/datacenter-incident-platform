@@ -12,6 +12,7 @@ from app.core.auth import CSRF_HEADER, check_csrf, current_auth, origin_allowed,
 from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.core.errors import ApiException
+from app.ml.disk_inference import disk_registry
 from app.ml.inference import registry
 from app.routers import app_routers
 from app.schemas.response import success_response
@@ -22,10 +23,12 @@ from app.websocket.manager import ws_manager
 async def lifespan(app: FastAPI):
     # The model is loaded once here and shared by every request; it is never retrained at runtime.
     registry.load(settings.ML_MODEL_PATH or None)
+    disk_registry.load()
     await init_db()
     logger.info("Database initialized")
-    if registry.ready:
-        await _record_model()
+    for model in (registry, disk_registry):
+        if model.ready:
+            await _record_model(model)
     yield
     logger.info("Shutting down")
     from app.services.alerts import wait_for_deliveries
@@ -37,17 +40,17 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Error closing database: {e}")
 
 
-async def _record_model() -> None:
+async def _record_model(model) -> None:
     """Keep a row per model version the API has served (model metadata)."""
     from app.core.timeutil import utcnow
     from app.models.monitoring import ModelRecord
 
-    rec = await ModelRecord.get(registry.version)
+    rec = await ModelRecord.get(model.version)
     if rec:
         rec.last_loaded_at = utcnow()
     else:
-        rec = ModelRecord(id=registry.version, trained_at=registry.bundle["trained_at"], artifact_sha256=registry.sha256,
-                          summary=registry.bundle.get("summary", {}))
+        rec = ModelRecord(id=model.version, trained_at=model.bundle["trained_at"], artifact_sha256=model.sha256,
+                          summary=model.bundle.get("summary", {}))
     await rec.save()
 
 

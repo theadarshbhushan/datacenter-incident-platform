@@ -57,4 +57,6 @@ python ../scripts/download_datasets.py   # fetches the training data into ../dc-
 python -m app.ml.training.train          # reads ../dc-ml/datasets/nab, writes app/ml/artifacts/
 ```
 
+The disk failure model trains separately. Put `data_Q1_2024.zip` to `data_Q4_2024.zip` from Backblaze Drive Stats (about 4 GB) in `../dc-ml/datasets/backblaze`, then run `python -m app.ml.training.train_disk`. The API works without its bundle: disk readings are stored but not scored.
+
 Restart the API to load the new bundle (or set `ML_MODEL_PATH`). See `app/ml/artifacts/MODEL_CARD.md` for data, evaluation and limitations.

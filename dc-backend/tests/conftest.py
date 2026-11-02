@@ -21,6 +21,7 @@ from mongomock_motor import AsyncMongoMockClient  # noqa: E402
 
 from app.core import ratelimit  # noqa: E402
 from app.main import app  # noqa: E402
+from app.ml.disk_inference import disk_registry  # noqa: E402
 from app.ml.inference import registry  # noqa: E402
 from app.models import ALL_MODELS  # noqa: E402
 from app.models.account import DevMail  # noqa: E402
@@ -50,6 +51,8 @@ async def db():
     ratelimit.reset_all()
     if not registry.ready:
         registry.load()  # the real artifact in app/ml/artifacts, loaded once per test session
+    if not disk_registry.ready:
+        disk_registry.load()
     yield
 
 

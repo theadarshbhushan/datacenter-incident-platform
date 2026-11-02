@@ -177,7 +177,7 @@ class Prediction(Document):
     server_id: str
     rack_id: Optional[str] = None
     dc_id: Optional[str] = None
-    kind: str                          # anomaly (detects the present) / early_warning (forecasts the next hour)
+    kind: str                          # anomaly (detects the present) / early_warning (forecasts the next hour) / disk_failure (30 days)
     type: str                          # human label, e.g. "CPU anomaly"
     category: str                      # incident category it maps to
     metric: Optional[str] = None
@@ -186,7 +186,7 @@ class Prediction(Document):
     risk_score: Optional[float] = None          # early warning model output, 0-1
     probability: Optional[float] = None         # only set when the model's calibration passed its test
     probability_calibrated: bool = False
-    horizon: str = "now"               # now / 1h
+    horizon: str = "now"               # now / 1h / 30d
     confidence: str = "low"            # low / medium / high (data coverage and validation of the metric)
     confidence_reason: str = ""
     factors: List[Factor] = Field(default_factory=list)
@@ -207,6 +207,26 @@ class Prediction(Document):
             pymongo.IndexModel([("org_id", 1), ("server_id", 1), ("kind", 1), ("generated_at", -1)]),
             pymongo.IndexModel([("generated_at", 1)], expireAfterSeconds=90 * 86400),
         ]
+
+
+class DiskHealth(Document):
+    """Latest SMART reading of one drive, plus older readings for measuring change over about a week."""
+    id: str = Field(default_factory=lambda: new_id("disk_"))
+    org_id: str
+    server_id: str
+    serial: str
+    model: str = ""
+    device: str = ""
+    last_at: datetime
+    smart: Dict[str, float] = Field(default_factory=dict)              # SMART attribute id -> raw value
+    anchor_at: datetime                                                # replaced once it is a week old
+    anchor_smart: Dict[str, float] = Field(default_factory=dict)
+    previous_smart: Optional[Dict[str, float]] = None                  # the reading 7 to 14 days old
+    demo: bool = False
+
+    class Settings:
+        name = "disk_health"
+        indexes = [pymongo.IndexModel([("org_id", 1), ("server_id", 1), ("serial", 1)], unique=True)]
 
 
 class ModelRecord(Document):
@@ -273,5 +293,5 @@ class SchemaMigration(Document):
         name = "schema_migrations"
 
 
-MONITORING_MODELS = [DataCenter, Rack, Server, TelemetryPoint, TelemetryBucket, IngestStats, Prediction, ModelRecord,
+MONITORING_MODELS = [DataCenter, Rack, Server, TelemetryPoint, TelemetryBucket, IngestStats, Prediction, DiskHealth, ModelRecord,
                      AlertRule, Notification, Counter, SchemaMigration]

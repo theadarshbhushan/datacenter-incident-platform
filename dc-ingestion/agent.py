@@ -13,6 +13,10 @@ Real mode uses psutil: CPU %, memory %, disk space %, disk throughput (MB/s), ne
 (Mb/s) and, where the OS exposes it, CPU temperature. Nothing is invented: a metric the machine does
 not expose is simply not sent.
 
+For disk failure prediction, install smartmontools and run the agent with admin rights. Once an hour
+it sends the SMART counters of each SATA hard drive. Without smartctl, or on NVMe drives and other
+SSDs, no disk readings are sent. Simulated mode never sends disk readings.
+
 Simulated mode is for trying the pipeline without hardware. Those servers are real rows in your
 organization (the backend cannot tell them apart), so use a separate test organization for it.
 Use --backfill-hours to send history first, so the model (which needs 4 hours of history) starts
@@ -21,10 +25,13 @@ scoring right away.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import random
+import shutil
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -32,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 INTERVAL = float(os.getenv("SEND_INTERVAL_SECONDS", "15"))
+SMART_INTERVAL = float(os.getenv("SMART_INTERVAL_SECONDS", "3600"))
 
 
 def post(client: httpx.Client, points: list[dict]) -> None:
@@ -47,6 +55,38 @@ def post(client: httpx.Client, points: list[dict]) -> None:
             print(f"rejected {len(body['rejected'])}: {body['rejected'][0]['error']}", file=sys.stderr)
 
 
+# ---------- SMART readings ----------
+
+def smartctl_json(*args: str) -> dict:
+    """smartctl uses non-zero exit bits for drive warnings, so the JSON is read whatever the exit code."""
+    try:
+        done = subprocess.run(["smartctl", "--json", *args], capture_output=True, text=True, timeout=30)
+        return json.loads(done.stdout)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return {}
+
+
+def parse_drive(info: dict, device: str) -> dict | None:
+    """A SATA hard drive's reading, or None for anything else (NVMe, SSD, USB bridge without SMART)."""
+    table = info.get("ata_smart_attributes", {}).get("table", [])
+    serial = info.get("serial_number")
+    if not table or not serial or not info.get("rotation_rate"):
+        return None
+    smart = {str(a["id"]): a["raw"]["value"] for a in table if "id" in a and "value" in a.get("raw", {})}
+    return {"device": device[:64], "serial": str(serial)[:64], "model": str(info.get("model_name", ""))[:80], "smart": smart} if smart else None
+
+
+def read_disks() -> list[dict]:
+    if not shutil.which("smartctl"):
+        return []
+    drives = []
+    for d in smartctl_json("--scan").get("devices", [])[:64]:
+        drive = parse_drive(smartctl_json("-i", "-A", d["name"]), d["name"])
+        if drive:
+            drives.append(drive)
+    return drives
+
+
 # ---------- real host metrics ----------
 
 def real_loop(client: httpx.Client, server_id: str, rack: str | None, dc: str | None) -> None:
@@ -55,6 +95,7 @@ def real_loop(client: httpx.Client, server_id: str, rack: str | None, dc: str | 
     host = socket.gethostname()
     psutil.cpu_percent(None)
     last_disk, last_net, last_t = psutil.disk_io_counters(), psutil.net_io_counters(), time.time()
+    next_smart = 0.0
     while True:
         time.sleep(INTERVAL)
         now = time.time()
@@ -74,8 +115,13 @@ def real_loop(client: httpx.Client, server_id: str, rack: str | None, dc: str | 
         if readings:
             metrics["temperature"] = round(max(readings), 1)
         last_disk, last_net, last_t = disk, net, now
-        post(client, [{"serverId": server_id, "hostname": host, "rack": rack, "dataCenter": dc, "role": "compute",
-                       "timestamp": datetime.now(timezone.utc).isoformat(), "metrics": metrics}])
+        point = {"serverId": server_id, "hostname": host, "rack": rack, "dataCenter": dc, "role": "compute",
+                 "timestamp": datetime.now(timezone.utc).isoformat(), "metrics": metrics}
+        if now >= next_smart:
+            next_smart = now + SMART_INTERVAL
+            point["disks"] = read_disks()
+            print(f"read SMART from {len(point['disks'])} SATA hard drive(s)")
+        post(client, [point])
         print(f"sent {metrics}")
 
 

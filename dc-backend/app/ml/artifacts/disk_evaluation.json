@@ -1,0 +1,167 @@
+{
+  "model_version": "vw-disk-20261102-1dba2e",
+  "trained_at": "2026-11-02T07:04:43Z",
+  "data": {
+    "snapshot_rows_all": 15260973,
+    "models_all": 87,
+    "hdd_models": 69,
+    "ssd_models_excluded": [
+      "CT250MX500SSD1",
+      "DELLBOSS VD",
+      "MTFDDAV240TCB",
+      "MTFDDAV480TCB",
+      "Micron 5300 MTFDDAK480TDS",
+      "SSDSCKKB240GZR",
+      "Samsung SSD 850 EVO 1TB",
+      "Samsung SSD 860 PRO 2TB",
+      "Seagate BarraCuda 120 SSD ZA250CM10003",
+      "Seagate BarraCuda 120 SSD ZA500CM10003",
+      "Seagate BarraCuda SSD ZA2000CM10002",
+      "Seagate BarraCuda SSD ZA250CM10002",
+      "Seagate BarraCuda SSD ZA500CM10002",
+      "Seagate FireCuda 120 SSD ZA500GM10001",
+      "Seagate IronWolf ZA250NM10002",
+      "Seagate SSD",
+      "WD Blue SA510 2.5 250GB",
+      "WDC WDS250G2B0A"
+    ],
+    "drives": 327328,
+    "failed_drives": 4633
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2024-07-01"
+    ],
+    "validation": [
+      "2024-08-01",
+      "2024-09-01"
+    ],
+    "test": [
+      "2024-10-02",
+      "2024-12-01"
+    ]
+  },
+  "horizon_days": 30,
+  "validation_pr_auc": {
+    "gradient_boosting": 0.1371,
+    "random_forest": 0.1688,
+    "logistic_regression": 0.1779
+  },
+  "selected_model": "logistic_regression",
+  "thresholds": {
+    "warning": 0.019952114924181964,
+    "critical": 0.056962025316455694
+  },
+  "probability_is_calibrated": false,
+  "brier_skill": -0.0024,
+  "validation_positive_rows": 164,
+  "test": {
+    "split": "test",
+    "rows": 463081,
+    "positive_rows": 574,
+    "base_rate": 0.00124,
+    "pr_auc": 0.0729,
+    "roc_auc": 0.8472,
+    "brier": 0.001241,
+    "brier_base_rate": 0.001238,
+    "calibration_error": 0.000403,
+    "warning": {
+      "precision": 0.0348,
+      "recall": 0.5801,
+      "false_positive_rate": 0.01997,
+      "failed_drives": 195,
+      "failed_drives_caught": 134,
+      "drive_recall": 0.6872,
+      "healthy_drives": 58630,
+      "healthy_drives_flagged": 1438,
+      "healthy_flag_rate": 0.02453,
+      "drive_precision": 0.0852,
+      "median_lead_days": 24.0
+    },
+    "critical": {
+      "precision": 0.0859,
+      "recall": 0.223,
+      "false_positive_rate": 0.00294,
+      "failed_drives": 195,
+      "failed_drives_caught": 73,
+      "drive_recall": 0.3744,
+      "healthy_drives": 58630,
+      "healthy_drives_flagged": 288,
+      "healthy_flag_rate": 0.00491,
+      "drive_precision": 0.2022,
+      "median_lead_days": 16.0
+    },
+    "baseline_any_error_counter": {
+      "precision": 0.0161,
+      "recall": 0.6899,
+      "false_positive_rate": 0.05249,
+      "failed_drives": 195,
+      "failed_drives_caught": 144,
+      "drive_recall": 0.7385,
+      "healthy_drives": 58630,
+      "healthy_drives_flagged": 3133,
+      "healthy_flag_rate": 0.05344,
+      "drive_precision": 0.0439,
+      "median_lead_days": 25.0,
+      "pr_auc": 0.0249
+    },
+    "by_manufacturer": {
+      "HGST": {
+        "positive_rows": 141,
+        "pr_auc": 0.1095,
+        "failed_drives": 52,
+        "failed_drives_caught": 43,
+        "healthy_flag_rate": 0.0535
+      },
+      "Seagate": {
+        "positive_rows": 218,
+        "pr_auc": 0.0994,
+        "failed_drives": 74,
+        "failed_drives_caught": 58,
+        "healthy_flag_rate": 0.04164
+      },
+      "Toshiba": {
+        "positive_rows": 160,
+        "pr_auc": 0.0688,
+        "failed_drives": 51,
+        "failed_drives_caught": 25,
+        "healthy_flag_rate": 0.00833
+      },
+      "Western Digital": {
+        "positive_rows": 55,
+        "pr_auc": 0.021,
+        "failed_drives": 18,
+        "failed_drives_caught": 8,
+        "healthy_flag_rate": 0.00504
+      }
+    }
+  },
+  "leave_one_maker_out": {
+    "HGST": {
+      "positive_rows": 141,
+      "base_rate": 0.002716,
+      "pr_auc": 0.1344
+    },
+    "Seagate": {
+      "positive_rows": 218,
+      "base_rate": 0.001312,
+      "pr_auc": 0.0092
+    },
+    "Toshiba": {
+      "positive_rows": 160,
+      "base_rate": 0.001058,
+      "pr_auc": 0.0834
+    },
+    "Western Digital": {
+      "positive_rows": 55,
+      "base_rate": 0.000586,
+      "pr_auc": 0.0251
+    }
+  },
+  "versions": {
+    "scikit-learn": "1.9.1",
+    "pandas": "3.1.0",
+    "numpy": "2.5.4"
+  }
+}

@@ -29,9 +29,12 @@ const sevTone = { critical: 'bg-critical-bg text-critical', warning: 'bg-warning
 /** The number to show for a prediction, with what it means. Never presents an uncalibrated score as a probability. */
 function headline(p: Prediction): { value: string; label: string } {
   if (p.kind === 'anomaly') return { value: p.anomalyScore === null ? '—' : p.anomalyScore.toFixed(2), label: 'anomaly score' };
-  if (p.probability !== null && p.probabilityCalibrated) return { value: pct(p.probability), label: 'probability (1h)' };
+  const window = p.kind === 'disk_failure' ? '30 days' : '1h';
+  if (p.probability !== null && p.probabilityCalibrated) return { value: p.probability < 0.01 ? '<1%' : pct(p.probability), label: `probability (${window})` };
   return { value: p.riskScore === null ? '—' : p.riskScore.toFixed(2), label: 'risk score (uncalibrated)' };
 }
+
+const kindLabel = { anomaly: 'Anomaly (now)', early_warning: 'Early warning (1h)', disk_failure: 'Disk failure (30 days)' } as const;
 
 function Bar({ value, color }: { value: number; color: string }) {
   return <span className="block h-1.5 w-full rounded-full bg-line"><span className="block h-1.5 rounded-full" style={{ width: `${Math.min(1, value) * 100}%`, backgroundColor: color }} /></span>;
@@ -57,6 +60,7 @@ export default function Predictions() {
   const model = ws.model;
   const evalAlert = model?.evaluation?.anomaly_loso_alert_rule;
   const evalEw = model?.evaluation?.early_warning;
+  const evalDisk = model?.diskFailure?.evaluation;
 
   const filtered = useMemo(() => ws.predictions
     .filter((p) => !dc || p.dcId === dc)
@@ -69,6 +73,7 @@ export default function Predictions() {
 
   const anomalies = filtered.filter((p) => p.kind === 'anomaly' && p.severity !== 'normal');
   const early = filtered.filter((p) => p.kind === 'early_warning' && p.severity !== 'normal');
+  const disks = filtered.filter((p) => p.kind === 'disk_failure');
   const byCategory = useMemo(() => {
     const m = new Map<string, number>();
     filtered.filter((p) => p.severity !== 'normal').forEach((p) => m.set(categoryLabels[p.category] ?? p.category, (m.get(categoryLabels[p.category] ?? p.category) ?? 0) + 1));
@@ -94,7 +99,7 @@ export default function Predictions() {
   if (ws.servers.length === 0) {
     return (
       <div>
-        <PageHeader title="AI Prediction & Risk Analysis" description="Anomaly detection and early warnings from your telemetry" crumbs={[{ label: 'Dashboard', to: '/app/dashboard' }, { label: 'Prediction' }]} />
+        <PageHeader title="AI Prediction & Risk Analysis" description="Anomaly detection, early warnings and disk failure risk from your telemetry" crumbs={[{ label: 'Dashboard', to: '/app/dashboard' }, { label: 'Prediction' }]} />
         <WorkspaceEmpty title="Predictions need infrastructure data" />
       </div>
     );
@@ -109,7 +114,7 @@ export default function Predictions() {
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${sevTone[p.severity]}`}><Icon className="h-4 w-4" /></span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-ink">{p.type} ({host(p.serverId)})</span>
-            <span className="block text-xs text-ink-muted">{p.kind === 'anomaly' ? 'Now' : 'Next hour · experimental'} · {p.confidence} confidence · {timeAgo(p.generatedAt)}</span>
+            <span className="block text-xs text-ink-muted">{p.kind === 'anomaly' ? 'Now' : p.kind === 'disk_failure' ? 'Next 30 days · experimental' : 'Next hour · experimental'} · {p.confidence} confidence · {timeAgo(p.generatedAt)}</span>
           </span>
           <span className={`rounded-md px-2 py-1 text-right text-sm font-bold ${sevTone[p.severity]}`} title={h.label}>{h.value}</span>
         </Link>
@@ -121,7 +126,7 @@ export default function Predictions() {
     <div>
       <PageHeader
         title="AI Prediction & Risk Analysis"
-        description="Anomaly detection and early warnings from your telemetry"
+        description="Anomaly detection, early warnings and disk failure risk from your telemetry"
         crumbs={[{ label: 'Dashboard', to: '/app/dashboard' }, { label: 'Prediction' }]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -143,11 +148,17 @@ export default function Predictions() {
       <Callout tone="info" className="mb-5" title="What these numbers mean">
         <span className="block"><strong className="text-ink">Anomaly score</strong> (0–1) ranks how unusual a server&apos;s latest 5-minute reading is against its own 24-hour baseline. It detects problems happening now and is <strong className="text-ink">not a probability</strong>.</span>
         <span className="mt-1 block"><strong className="text-ink">Early warning</strong> is experimental: the chance a metric surges within the next hour. It is shown as a probability only when its calibration passed testing{model?.earlyWarning && !model.earlyWarning.probabilityCalibrated ? ' (it did not for this model, so a risk score is shown)' : ''}. It does not predict hardware failures.</span>
+        <span className="mt-1 block"><strong className="text-ink">Disk failure</strong> is experimental: it ranks how likely a server&apos;s riskiest SATA hard drive is to fail within 30 days, learned from drives that really failed. Most flagged drives will not fail, and a low score does not mean a drive is safe. NVMe drives, other SSDs, memory, power supplies, fans and CPUs are not covered.</span>
         <span className="mt-1 block"><strong className="text-ink">Confidence</strong> describes how much history backs the result, and whether that metric type was in the labeled evaluation data.</span>
         {evalAlert && (
           <span className="mt-2 block text-xs">
             Held-out evaluation on real labeled data (NAB): the alert rule caught {evalAlert.windows_detected} of {evalAlert.windows_total} labeled anomaly windows with {evalAlert.false_alarm_episodes_per_day} false alarm episodes per server per day
             {evalEw ? `; early warning PR-AUC ${evalEw.pr_auc} vs a base rate of ${evalEw.base_rate}` : ''}. Details in the model card (dc-backend/app/ml/artifacts/MODEL_CARD.md).
+          </span>
+        )}
+        {evalDisk?.failed_drives !== undefined && (
+          <span className="mt-1 block text-xs">
+            Held-out test on real drive failures (Backblaze): the warning level caught {evalDisk.failed_drives_caught_warning} of {evalDisk.failed_drives} drives that failed, and flagged {pct(evalDisk.healthy_flag_rate_warning ?? 0)} of healthy drives. Details in DISK_MODEL_CARD.md.
           </span>
         )}
       </Callout>
@@ -167,9 +178,10 @@ export default function Predictions() {
             {ws.racks.filter((r) => !dc || r.dcId === dc).map((r) => <option key={r.id} value={r.id}>Rack {r.label}</option>)}
           </Select>
           <Select aria-label="Prediction kind" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-            <option value="">Anomalies and early warnings</option>
+            <option value="">All prediction kinds</option>
             <option value="anomaly">Anomaly detection (now)</option>
             <option value="early_warning">Early warning (next hour)</option>
+            <option value="disk_failure">Disk failure (next 30 days)</option>
           </Select>
           <Select aria-label="Severity filter" value={onlyFlagged ? 'flagged' : ''} onChange={(e) => setOnlyFlagged(e.target.value === 'flagged')}>
             <option value="">All severities</option>
@@ -199,6 +211,13 @@ export default function Predictions() {
             </Card>
           </div>
 
+          {disks.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader title="Disk failure risk (next 30 days)" description="Experimental: the riskiest SATA hard drive on each server" action={<Badge tone="warning">Experimental</Badge>} />
+              <ul className="grid gap-2 p-5 pt-3 md:grid-cols-2">{disks.slice(0, 8).map((p) => <Row key={p.id} p={p} />)}</ul>
+            </Card>
+          )}
+
           <Card className="mt-4">
             <CardHeader title="All predictions" description={`${filtered.length} current results (newest per server and kind)`} />
             <div className="mt-3 max-h-[480px] overflow-auto">
@@ -211,7 +230,7 @@ export default function Predictions() {
                     return (
                       <tr key={p.id} className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas/60" onClick={() => navigate(`/app/predictions/${p.id}`)}>
                         <td className="td"><Link to={`/app/predictions/${p.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs hover:text-brand">{host(p.serverId)}</Link><span className="block text-[11px] text-ink-muted">Rack {rackLabel(p.rackId)}</span></td>
-                        <td className="td text-ink-muted">{p.kind === 'anomaly' ? 'Anomaly (now)' : 'Early warning (1h)'}</td>
+                        <td className="td text-ink-muted">{kindLabel[p.kind]}</td>
                         <td className="td">{p.type}</td>
                         <td className="td"><span className="mb-1 block text-xs font-medium">{h.value} <span className="font-normal text-ink-muted">{h.label}</span></span><Bar value={v} color={p.severity === 'critical' ? '#DC2626' : p.severity === 'warning' ? '#D97706' : '#16834A'} /></td>
                         <td className="td"><span className={`rounded-md px-2 py-0.5 text-xs font-medium ${sevTone[p.severity]}`}>{capitalize(p.severity)}</span></td>
@@ -246,7 +265,7 @@ export default function Predictions() {
             <div className="flex flex-wrap gap-2">
               {selected.sample && <SampleBadge label={isMock ? 'Sample prediction, no model ran' : 'Model output on sample telemetry'} />}
               {selected.experimental && <Badge tone="warning">Experimental</Badge>}
-              <Badge tone="neutral">{selected.kind === 'anomaly' ? 'Detects the present' : 'Forecasts the next hour'}</Badge>
+              <Badge tone="neutral">{selected.kind === 'anomaly' ? 'Detects the present' : selected.kind === 'disk_failure' ? 'Forecasts the next 30 days' : 'Forecasts the next hour'}</Badge>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-line p-4">
@@ -293,7 +312,7 @@ export default function Predictions() {
         onClose={() => setCreatingFrom(null)}
         defaults={creatingFrom ? {
           title: `${creatingFrom.type} on ${host(creatingFrom.serverId)}`,
-          description: `Opened from a ${creatingFrom.kind === 'anomaly' ? 'model anomaly detection' : 'experimental early warning'}: ${headline(creatingFrom).label} ${headline(creatingFrom).value}, severity ${creatingFrom.severity}, ${creatingFrom.confidence} confidence (model ${creatingFrom.modelVersion}). ${creatingFrom.recommendation}`,
+          description: `Opened from a ${creatingFrom.kind === 'anomaly' ? 'model anomaly detection' : creatingFrom.kind === 'disk_failure' ? 'disk failure prediction' : 'experimental early warning'}: ${headline(creatingFrom).label} ${headline(creatingFrom).value}, severity ${creatingFrom.severity}, ${creatingFrom.confidence} confidence (model ${creatingFrom.modelVersion}). ${creatingFrom.recommendation}`,
           severity: creatingFrom.severity === 'critical' ? 'critical' : 'major',
           category: creatingFrom.category,
           rackId: creatingFrom.rackId,

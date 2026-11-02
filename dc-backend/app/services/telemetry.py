@@ -106,10 +106,10 @@ async def record_stats(org_id: str, accepted: int, rejected: int, error: str = "
 async def ingest(org: Organization, points: List, source: str = "agent") -> dict:
     """Validate and store a batch. Partial success: each rejected point is reported with its reason."""
     from app.services import demo as demo_svc
-    from app.services import pipeline
+    from app.services import disk_health, pipeline
 
     now = utcnow()
-    accepted, rejected = 0, []
+    accepted, rejected, disk_points = 0, [], []
     touched: Dict[str, Server] = {}
     if points and await demo_svc.has_demo(org.id):
         await demo_svc.clear(org, actor="VaultWatch", reason="Real telemetry arrived, so the sample environment was removed.")
@@ -128,6 +128,8 @@ async def ingest(org: Organization, points: List, source: str = "agent") -> dict
                 server.latest.at = ts
             touched[p.serverId] = server
             accepted += 1
+            if p.disks:
+                disk_points.append((server, ts, p.disks))
         except PointError as e:
             rejected.append({"index": i, "serverId": getattr(p, "serverId", None), "error": str(e)})
     for s in touched.values():
@@ -139,6 +141,9 @@ async def ingest(org: Organization, points: List, source: str = "agent") -> dict
     scored = 0
     for s in touched.values():
         scored += await pipeline.score_if_bucket_closed(org.id, s)
+    for server, ts, readings in disk_points:
+        drives = await disk_health.record_readings(org.id, server, readings, ts)
+        await disk_health.score_drives(org.id, server, drives, ts)
     return {"accepted": accepted, "rejected": rejected, "servers": len(touched), "assessed": scored}
 
 

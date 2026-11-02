@@ -15,6 +15,7 @@ python agent.py --simulate 6 --backfill-hours 6 --spike-after-min 10   # simulat
 ```
 
 - Real mode only sends what the operating system exposes. Missing metrics are left out, never invented.
+- For disk failure prediction, install smartmontools (`apt install smartmontools`, or `choco install smartmontools` on Windows) and run the agent as root or Administrator. Once an hour it sends the SMART counters of each SATA hard drive. NVMe drives and other SSDs are skipped, and simulated mode never sends disk readings.
 - Simulated servers are stored like real ones (the backend cannot tell them apart). Use a separate test organization.
 - The model needs 4 hours of history per server before it scores it; `--backfill-hours` gives simulated servers that history immediately.
 - `docker compose --profile agent up` runs the simulated fleet in a container. A container would report itself rather than the host, so run `agent.py` directly on the machines you want to monitor.

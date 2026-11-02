@@ -209,6 +209,7 @@ export interface PredictionFactor { label: string; metric?: string | null; weigh
  * - kind "anomaly": detects unusual behavior now (horizon "now"). anomalyScore is a percentile, NOT a probability.
  * - kind "early_warning": experimental forecast of a metric surge in the next hour. riskScore is the model output;
  *   probability is only set when the model's calibration passed its held-out test.
+ * - kind "disk_failure": the chance a server's riskiest SATA hard drive fails within 30 days, from SMART counters.
  * - severity is an operating decision from fixed thresholds; confidence describes how much data backs the result.
  */
 export interface Prediction {
@@ -216,7 +217,7 @@ export interface Prediction {
   serverId: string;
   rackId: string;
   dcId: string;
-  kind: 'anomaly' | 'early_warning';
+  kind: 'anomaly' | 'early_warning' | 'disk_failure';
   type: string;
   category: IncidentCategory;
   metric: string | null;
@@ -225,7 +226,7 @@ export interface Prediction {
   riskScore: number | null;
   probability: number | null;
   probabilityCalibrated: boolean;
-  horizon: PredictionHorizon;
+  horizon: PredictionHorizon | '30d';
   confidence: 'low' | 'medium' | 'high';
   confidenceReason: string;
   factors: PredictionFactor[];
@@ -249,6 +250,13 @@ export interface ModelInfo {
   /** True only for the browser-only demo (VITE_API_MODE=mock), where no model runs. */
   sample: boolean;
   earlyWarning?: { available: boolean; experimental: boolean; probabilityCalibrated: boolean; horizonMinutes: number };
+  diskFailure?: {
+    ready: boolean;
+    version?: string;
+    horizonDays?: number;
+    probabilityCalibrated?: boolean;
+    evaluation?: { test_pr_auc?: number; test_base_rate?: number; failed_drives?: number; failed_drives_caught_warning?: number; healthy_flag_rate_warning?: number };
+  };
   evaluation?: {
     anomaly_loso_at_warning?: ModelEvaluationPoint;
     anomaly_loso_at_critical?: ModelEvaluationPoint;

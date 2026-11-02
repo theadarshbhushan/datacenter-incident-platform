@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from app.core.auth import OrgContext
 from app.core.timeutil import iso
+from app.ml.disk_inference import disk_registry
 from app.ml.inference import registry
 from app.models.account import ApiKey, AuditEntry, Invitation, OrgWorkspace, WorkspaceAlert, WorkspaceIncident
 from app.models.monitoring import AlertRule, DataCenter, Prediction
@@ -55,6 +56,7 @@ def model_public() -> Optional[dict]:
     return {
         "name": "Isolation Forest anomaly detection + experimental early warning", "version": st["version"], "trainedAt": st["trainedAt"],
         "ready": True, "sample": False, "earlyWarning": st["earlyWarning"], "evaluation": st["evaluation"],
+        "diskFailure": disk_registry.status(),
     }
 
 

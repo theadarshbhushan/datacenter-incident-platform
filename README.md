@@ -92,7 +92,11 @@ cd dc-frontend && npm run typecheck && npm run build
   - On the test split: PR-AUC **0.249** vs a 0.074 base rate, and a Brier skill score of 0.17.
   - It passed the calibration check (calibration error 0.034), so it is shown as a probability.
   - It is **not** a hardware-failure forecast.
-- **No failure prediction is claimed.** The data has no labels for disk failures or overheating, so VaultWatch does not claim to predict those. Memory, temperature, power and latency are scored with the same scale-free features, but they were not in the labeled data, so their results show lower confidence.
+- **Disk failure prediction (experimental).** A logistic regression scores each SATA hard drive for failing within 30 days from its SMART counters. It was trained on real recorded failures in Backblaze's 2024 data, and tested on drives and dates it never saw.
+  - On that test: the warning level caught 134 of 195 failing drives and flagged 2.5% of healthy drives. The critical level caught 73 of 195 and flagged 0.5% of healthy drives.
+  - Most flagged drives do not fail: about 1 in 5 at the critical level. So the critical level raises a warning alert and never opens an incident, and the score is not shown as a probability because it failed the calibration check.
+  - `dc-backend/app/ml/artifacts/DISK_MODEL_CARD.md` has the details, including how results vary by drive maker. NVMe drives and other SSDs are not covered.
+- **No other hardware failure prediction is claimed.** No public labeled data was found for power supplies, fans, CPUs or overheating, and memory prediction is not built. Memory, temperature, power and latency are scored for anomalies with the same scale-free features, but they were not in the labeled data, so their results show lower confidence.
 - **Scores are kept separate.** The anomaly score (a percentile, not a probability), probability, severity (from fixed thresholds) and confidence (how much history backs the result) are separate fields in the API and the UI.
 - **Root-cause assistance** uses explainable rules over per-metric scores, rack-mates, correlated alerts and incident history. Its answer is always "suspected" until someone on your team confirms the cause on the incident. No LLM is involved.
 - **Earlier models.** The old XGBoost, Bi-LSTM and Isolation Forest results came from synthetic columns, rule-generated labels and a shuffled split, so those models were removed. `dc-ml/README.md` explains why.

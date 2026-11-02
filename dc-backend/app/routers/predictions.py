@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import OrgContext, require_org
 from app.core.errors import ApiException, not_found
+from app.ml.disk_inference import disk_registry
 from app.ml.inference import registry
 from app.models.monitoring import Prediction
 from app.schemas.monitoring import PredictionRunIn
@@ -19,7 +20,7 @@ router = APIRouter(tags=["Predictions"])
 @router.get("/predictions", summary="Current predictions, or the prediction log with history=true")
 async def list_predictions(
     ctx: OrgContext = Depends(require_org()),
-    kind: Optional[Literal["anomaly", "early_warning"]] = None,
+    kind: Optional[Literal["anomaly", "early_warning", "disk_failure"]] = None,
     server_id: Optional[str] = Query(default=None, alias="serverId"),
     history: bool = False,
     limit: int = Query(default=500, ge=1, le=2000),
@@ -54,4 +55,4 @@ async def get_prediction(prediction_id: str, ctx: OrgContext = Depends(require_o
 
 @router.get("/ml/status", summary="Model readiness, version and the evaluation results it was trained with")
 async def ml_status(ctx: OrgContext = Depends(require_org())):
-    return success_response(registry.status())
+    return success_response({**registry.status(), "diskFailure": disk_registry.status()})

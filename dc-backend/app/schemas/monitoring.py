@@ -1,6 +1,6 @@
 """Request schemas for telemetry ingestion, infrastructure management and predictions."""
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +21,22 @@ class MetricValues(BaseModel):
     latency: Optional[float] = Field(default=None, ge=0, le=60000, description="Network latency, milliseconds")
 
 
+class DiskReadingIn(BaseModel):
+    """One SATA hard drive's SMART raw values, as smartctl reports them."""
+    model_config = ConfigDict(extra="forbid")
+
+    device: str = Field(min_length=1, max_length=64, description="Device name, for example /dev/sda")
+    serial: str = Field(min_length=1, max_length=64)
+    model: str = Field(default="", max_length=80)
+    smart: Dict[int, float] = Field(min_length=1, max_length=64, description="SMART attribute id to raw value")
+
+    @model_validator(mode="after")
+    def finite_counters(self):
+        if any(not 0 <= v < 2 ** 64 for v in self.smart.values()):
+            raise ValueError("SMART raw values must be non-negative numbers")
+        return self
+
+
 class TelemetryPointIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,6 +48,7 @@ class TelemetryPointIn(BaseModel):
     dataCenter: Optional[str] = Field(default=None, max_length=80, description="Data center name; registered on first use")
     role: Optional[str] = Field(default=None, max_length=40)
     metrics: MetricValues
+    disks: List[DiskReadingIn] = Field(default_factory=list, max_length=64, description="SMART readings, sent about once an hour")
 
     @model_validator(mode="after")
     def tz_required(self):
