@@ -9,6 +9,5 @@ COPY . .
 
 EXPOSE 5173
 
-# Development server. For production, run `npm run build` and serve dist/ behind the same
-# origin as the API (or a reverse proxy that forwards /api to dc-backend).
+# Development server. Production uses Dockerfile.prod (see docker-compose.prod.yml).
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

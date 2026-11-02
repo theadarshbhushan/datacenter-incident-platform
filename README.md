@@ -16,6 +16,10 @@ VaultWatch monitors data center servers, detects anomalies in their telemetry, a
 | `dc-ml/` | Notes on the retired research models, and where `scripts/download_datasets.py` puts the training data (see `dc-ml/README.md`) |
 | `infra/` | Optional Prometheus and Grafana |
 
+## Deploy it
+
+`docs/DEPLOYMENT.md` puts VaultWatch on a public HTTPS address with `docker-compose.prod.yml`. Other machines then connect with the one-line agent install from **Integrations**.
+
 ## Run it
 
 ### 1. Everything with Docker (database on MongoDB Atlas)

@@ -1,6 +1,9 @@
 # VaultWatch telemetry agent
 
 `agent.py` sends readings to the backend's `POST /api/v1/telemetry/ingest` with an organization API key.
+
+**The usual way to install it is one command.** VaultWatch -> Integrations -> Install the agent gives you the command for Linux (`install.sh`, a systemd service) or Windows (`install.ps1`, a startup task). The backend serves these files at `/api/v1/agent/`. The rest of this page is for running the agent by hand.
+
 It replaced the earlier Kafka producer (the Kafka/Celery pipeline it fed was not organization-scoped and has been removed).
 
 ```bash

@@ -11,6 +11,8 @@ services:
   dc-backend:
     build:
       context: ./dc-backend
+      additional_contexts:
+        ingestion: ./dc-ingestion
     container_name: dc-backend
     restart: unless-stopped
     env_file:

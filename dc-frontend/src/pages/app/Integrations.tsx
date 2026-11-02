@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Cloud, Copy, Database, FlaskConical, KeyRound, Loader2, Plug, Plus, RefreshCw, Server, Trash2, Webhook } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Cloud, Copy, Database, FlaskConical, KeyRound, Loader2, Plug, Plus, RefreshCw, Server, Terminal, Trash2, Webhook } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Badge, Button, Callout, Card, CardHeader, ConfirmDialog, Dialog, EmptyState, FormField, Input } from '@/components/ui';
+import { Badge, Button, Callout, Card, CardHeader, ConfirmDialog, Dialog, EmptyState, FormField, Input, Select } from '@/components/ui';
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
@@ -25,6 +25,19 @@ const placeholders = [
   { icon: Webhook, name: 'Slack / PagerDuty', text: 'Configured in Alerts → Notifications.' },
 ];
 
+/** Rack and data center names go into a shell command, so only safe characters are kept. */
+const shellSafe = (v: string) => v.replace(/[^A-Za-z0-9 ._-]/g, '');
+
+function installCommand(os: 'linux' | 'windows', site: string, key: string, rack: string, dc: string): string {
+  const k = key.trim() || 'PASTE_YOUR_API_KEY';
+  if (os === 'windows') {
+    const extra = [rack && `$env:VAULTWATCH_RACK='${shellSafe(rack)}'`, dc && `$env:VAULTWATCH_DATACENTER='${shellSafe(dc)}'`].filter(Boolean).map((s) => `${s}; `).join('');
+    return `$env:VAULTWATCH_URL='${site}'; $env:VAULTWATCH_API_KEY='${k}'; ${extra}irm ${site}/api/v1/agent/install.ps1 | iex`;
+  }
+  const extra = [rack && `VAULTWATCH_RACK="${shellSafe(rack)}"`, dc && `VAULTWATCH_DATACENTER="${shellSafe(dc)}"`].filter(Boolean).map((s) => `${s} `).join('');
+  return `curl -fsSL ${site}/api/v1/agent/install.sh | sudo VAULTWATCH_URL=${site} VAULTWATCH_API_KEY=${k} ${extra}sh`;
+}
+
 export default function Integrations() {
   const { workspace, reload } = useWorkspace();
   const { can } = useAuth();
@@ -40,6 +53,10 @@ export default function Integrations() {
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [loadingSample, setLoadingSample] = useState(false);
+  const [os, setOs] = useState<'linux' | 'windows'>('linux');
+  const [installKey, setInstallKey] = useState('');
+  const [rack, setRack] = useState('');
+  const [dc, setDc] = useState('');
 
   const [status, setStatus] = useState<IntegrationStatus | null>(null);
   const check = async () => {
@@ -54,11 +71,15 @@ export default function Integrations() {
     if (name.trim().length < 3) return setNameErr('Name the key (at least 3 characters).');
     if (!chosen.length) return setNameErr('Choose at least one scope.');
     setNameErr(null); setBusy(true);
-    try { const k = await api.createApiKey(name.trim(), chosen); setCreated(k); setCreating(false); setName(''); await reload(); }
+    try { const k = await api.createApiKey(name.trim(), chosen); setCreated(k); setInstallKey(k.secret); setCreating(false); setName(''); await reload(); }
     catch (e) { setNameErr(errorMessage(e)); } finally { setBusy(false); }
   };
 
   const ingestUrl = `${config.apiUrl || window.location.origin}/api/v1/telemetry/ingest`;
+  const site = window.location.origin;
+  const localOnly = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const command = installCommand(os, site, installKey, rack, dc);
+  const copyCommand = async () => { try { await navigator.clipboard.writeText(command); toast.success('Copied to clipboard'); } catch { toast.error('Copy failed', 'Select the command and copy it manually.'); } };
   const t = ws.telemetry;
   const telemetryLine = {
     live: `Live: ${t.serversReporting} of ${t.serversTotal} servers reported in the last 5 minutes.`,
@@ -117,6 +138,26 @@ export default function Integrations() {
           </div>
         </Card>
       </div>
+
+      {!isMock && (
+        <Card className="mt-4">
+          <CardHeader title="Install the agent on a server" description="Run one command. The server connects by itself, appears on the dashboard and keeps reporting after a restart." />
+          <div className="space-y-3 p-5">
+            {localOnly && <Callout tone="warning" title="This site is only on this computer">Other machines cannot reach {site}. Deploy VaultWatch first, then copy the command from your public site. See docs/DEPLOYMENT.md.</Callout>}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <FormField label="Operating system">{(p) => <Select {...p} value={os} onChange={(e) => setOs(e.target.value as typeof os)}><option value="linux">Linux</option><option value="windows">Windows</option></Select>}</FormField>
+              <FormField label="API key" hint="Create one below. It is shown once.">{(p) => <Input {...p} value={installKey} onChange={(e) => setInstallKey(e.target.value)} className="font-mono text-xs" autoComplete="off" />}</FormField>
+              <FormField label="Rack (optional)">{(p) => <Input {...p} value={rack} onChange={(e) => setRack(e.target.value)} maxLength={32} />}</FormField>
+              <FormField label="Data center (optional)">{(p) => <Input {...p} value={dc} onChange={(e) => setDc(e.target.value)} maxLength={80} />}</FormField>
+            </div>
+            <pre className="overflow-x-auto rounded-lg bg-[#0F1A14] p-3 font-mono text-xs leading-5 text-[#D6E4DA]">{command}</pre>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button size="sm" variant="secondary" icon={<Copy className="h-4 w-4" />} onClick={copyCommand}>Copy command</Button>
+              <p className="flex items-center gap-1.5 text-xs text-ink-muted"><Terminal className="h-3.5 w-3.5" />{os === 'windows' ? 'Run in PowerShell as Administrator.' : 'Run in a terminal with sudo access.'}</p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="mt-4">
         <CardHeader title="API keys" description="Organization-scoped keys. The full key is shown once; the server stores only a hash." action={can('apiKeys:manage') && <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Create key</Button>} />

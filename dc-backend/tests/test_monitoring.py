@@ -246,3 +246,17 @@ async def test_health_readiness_and_ml_status(browser):
     assert st["evaluation"]["anomaly_loso_alert_rule"]["windows_total"] == 11
     integ = (await browser.get("/integrations/status")).json()["data"]
     assert integ["slack"]["configured"] is False and integ["email"]["delivers"] is False and integ["model"]["ready"]
+
+
+async def test_agent_installers_are_public_and_limited_to_known_files(browser):
+    c = browser.c
+    script = await c.get("/api/v1/agent/install.sh")
+    assert script.status_code == 200 and script.text.startswith("#!/bin/sh")
+    assert (await c.get("/api/v1/agent/agent.py")).status_code == 200
+    assert (await c.get("/api/v1/agent/config.py")).status_code == 404
+    assert (await c.get("/api/v1/agent/..%2F.env")).status_code == 404
+
+
+async def test_bad_api_key_is_refused_before_the_body_is_read(browser):
+    r = await browser.c.post("/api/v1/telemetry/ingest", json={"points": []}, headers={"X-API-Key": "vw_live_wrong"})
+    assert r.status_code == 401

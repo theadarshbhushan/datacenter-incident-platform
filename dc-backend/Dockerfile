@@ -9,6 +9,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+# The agent and its installers, served at /api/v1/agent/. docker compose supplies the "ingestion" context.
+COPY --from=ingestion agent.py requirements.txt install.sh install.ps1 /app/agent_dist/
 
 RUN useradd --create-home --uid 10001 vaultwatch && chown -R vaultwatch /app
 USER vaultwatch

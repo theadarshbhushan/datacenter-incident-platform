@@ -4,11 +4,14 @@ Telemetry ingestion for monitoring agents and integrations.
 Authenticate with an organization API key that has the `metrics:write` scope:
 `X-API-Key: vw_live_...` (or `Authorization: Bearer vw_live_...`). Browser sessions cannot ingest.
 """
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import PlainTextResponse
 
 from app.core import ratelimit
 from app.core.auth import OrgContext, require_org
-from app.core.errors import ApiException
+from app.core.errors import ApiException, not_found
 from app.core.timeutil import utcnow
 from app.core.tokens import hash_token
 from app.models.account import ApiKey, Organization
@@ -17,6 +20,10 @@ from app.schemas.response import success_response
 from app.services import telemetry as svc
 
 router = APIRouter(tags=["Telemetry"])
+
+AGENT_FILES = ("agent.py", "requirements.txt", "install.sh", "install.ps1")
+ROOT = Path(__file__).resolve().parents[2]            # /app in the image, dc-backend/ in a checkout
+AGENT_DIRS = (ROOT / "agent_dist", ROOT.parent / "dc-ingestion")
 
 
 async def api_key_org(request: Request) -> Organization:
@@ -51,6 +58,15 @@ async def ingest(body: TelemetryBatchIn | TelemetryPointIn, org: Organization = 
                            {"points": result["rejected"][0]["error"]})
     msg = f"Accepted {result['accepted']} point(s)" + (f", rejected {len(result['rejected'])}" if result["rejected"] else "")
     return success_response(result, msg)
+
+
+@router.get("/agent/{name}", summary="The agent and its installers. Public: they hold no secrets", response_class=PlainTextResponse)
+async def agent_file(name: str):
+    if name in AGENT_FILES:
+        for folder in AGENT_DIRS:
+            if (folder / name).is_file():
+                return PlainTextResponse((folder / name).read_text(encoding="utf-8"))
+    raise not_found("No such agent file.")
 
 
 @router.post("/metrics", status_code=status.HTTP_201_CREATED, summary="Legacy single-point ingestion (use /telemetry/ingest)", deprecated=True)

@@ -1,0 +1,22 @@
+# SITE_ADDRESS is your domain (Caddy then gets and renews the HTTPS certificate itself), or :80 for plain HTTP.
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@backend path /api/* /health /ws
+	handle @backend {
+		reverse_proxy dc-backend:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,2 @@
+# install.sh runs on Linux servers, and CRLF line endings would break it.
+*.sh text eol=lf

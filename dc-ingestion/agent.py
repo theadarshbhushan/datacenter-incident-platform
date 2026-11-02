@@ -44,11 +44,16 @@ SMART_INTERVAL = float(os.getenv("SMART_INTERVAL_SECONDS", "3600"))
 
 def post(client: httpx.Client, points: list[dict]) -> None:
     for i in range(0, len(points), 500):
-        r = client.post("/api/v1/telemetry/ingest", json={"points": points[i:i + 500]})
+        try:
+            r = client.post("/api/v1/telemetry/ingest", json={"points": points[i:i + 500]})
+        except httpx.HTTPError as e:   # keep running through network and backend outages
+            print(f"ingest failed: {e}", file=sys.stderr)
+            continue
         if r.status_code >= 300:
             print(f"ingest failed: HTTP {r.status_code} {r.text[:300]}", file=sys.stderr)
             if r.status_code in (401, 403):
-                sys.exit("Check VAULTWATCH_API_KEY (it needs the metrics:write scope).")
+                print("Check VAULTWATCH_API_KEY (it needs the metrics:write scope).", file=sys.stderr)
+                sys.exit(2)            # the installed service does not restart on this code
             continue
         body = r.json()["data"]
         if body["rejected"]:
@@ -57,10 +62,15 @@ def post(client: httpx.Client, points: list[dict]) -> None:
 
 # ---------- SMART readings ----------
 
+def smartctl_path() -> str | None:
+    configured = os.getenv("SMARTCTL")
+    return configured if configured and os.path.exists(configured) else shutil.which("smartctl")
+
+
 def smartctl_json(*args: str) -> dict:
     """smartctl uses non-zero exit bits for drive warnings, so the JSON is read whatever the exit code."""
     try:
-        done = subprocess.run(["smartctl", "--json", *args], capture_output=True, text=True, timeout=30)
+        done = subprocess.run([smartctl_path(), "--json", *args], capture_output=True, text=True, timeout=30)
         return json.loads(done.stdout)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return {}
@@ -77,7 +87,7 @@ def parse_drive(info: dict, device: str) -> dict | None:
 
 
 def read_disks() -> list[dict]:
-    if not shutil.which("smartctl"):
+    if not smartctl_path():
         return []
     drives = []
     for d in smartctl_json("--scan").get("devices", [])[:64]:
@@ -156,11 +166,26 @@ def simulate(client: httpx.Client, n: int, backfill_hours: float, spike_after_mi
         time.sleep(INTERVAL)
 
 
+def load_config(path: str) -> None:
+    """KEY=VALUE lines. Windows has no equivalent of systemd's EnvironmentFile, so install.ps1 uses this."""
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            key, _, value = line.strip().partition("=")
+            if key and value and not key.startswith("#"):
+                os.environ[key] = value
+
+
 def main() -> None:
+    first = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    first.add_argument("--config")
+    config = first.parse_known_args()[0].config
+    if config:
+        load_config(config)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", help="read settings from a KEY=VALUE file")
     ap.add_argument("--server-id", default=os.getenv("VAULTWATCH_SERVER_ID") or socket.gethostname().lower().replace(" ", "-")[:64])
-    ap.add_argument("--rack", default=os.getenv("VAULTWATCH_RACK"))
-    ap.add_argument("--datacenter", default=os.getenv("VAULTWATCH_DATACENTER"))
+    ap.add_argument("--rack", default=os.getenv("VAULTWATCH_RACK") or None)
+    ap.add_argument("--datacenter", default=os.getenv("VAULTWATCH_DATACENTER") or None)
     ap.add_argument("--simulate", type=int, metavar="N", help="send N simulated servers instead of this machine's metrics")
     ap.add_argument("--backfill-hours", type=float, default=float(os.getenv("BACKFILL_HOURS", "0")), help="simulated mode: send this much history first (max 24)")
     ap.add_argument("--spike-after-min", type=float, default=None, help="simulated mode: make sim-00 run hot after this many minutes")
