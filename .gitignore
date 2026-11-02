@@ -12,3 +12,5 @@ build/
 *.log 
 
 dc-ml/datasets/
+.venv/
+.venv-*/
