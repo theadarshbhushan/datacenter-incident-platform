@@ -13,7 +13,7 @@ VaultWatch monitors data center servers, detects anomalies in their telemetry, a
 | `dc-backend/` | FastAPI + MongoDB API: accounts and sessions, organizations and roles, infrastructure, telemetry ingestion, ML inference, incidents, alerts, reports. See `dc-backend/README.md`. |
 | `dc-backend/app/ml/` | The model: features, training and evaluation, inference, root-cause rules. Results are in `artifacts/MODEL_CARD.md`. |
 | `dc-ingestion/` | Telemetry agent: sends this machine's real metrics, or a simulated fleet for testing |
-| `dc-ml/` | Datasets used for training, plus the retired research models (see `dc-ml/README.md` for why they were retired) |
+| `dc-ml/` | Notes on the retired research models, and where `scripts/download_datasets.py` puts the training data (see `dc-ml/README.md`) |
 | `infra/` | Optional Prometheus and Grafana |
 
 ## Run it
@@ -95,7 +95,7 @@ cd dc-frontend && npm run typecheck && npm run build
 - **No failure prediction is claimed.** The data has no labels for disk failures or overheating, so VaultWatch does not claim to predict those. Memory, temperature, power and latency are scored with the same scale-free features, but they were not in the labeled data, so their results show lower confidence.
 - **Scores are kept separate.** The anomaly score (a percentile, not a probability), probability, severity (from fixed thresholds) and confidence (how much history backs the result) are separate fields in the API and the UI.
 - **Root-cause assistance** uses explainable rules over per-metric scores, rack-mates, correlated alerts and incident history. Its answer is always "suspected" until someone on your team confirms the cause on the incident. No LLM is involved.
-- **Earlier models.** The XGBoost, Bi-LSTM and old Isolation Forest results in `dc-ml/` came from synthetic columns, rule-generated labels and a shuffled split, and are no longer used. `dc-ml/README.md` explains why.
+- **Earlier models.** The old XGBoost, Bi-LSTM and Isolation Forest results came from synthetic columns, rule-generated labels and a shuffled split, so those models were removed. `dc-ml/README.md` explains why.
 
 ## Database
 

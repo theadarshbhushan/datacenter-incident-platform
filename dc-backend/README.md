@@ -53,6 +53,7 @@ Responses use `{success, data, message, timestamp}`; errors add a stable `code` 
 
 ```bash
 pip install -r requirements-ml.txt
+python ../scripts/download_datasets.py   # fetches the training data into ../dc-ml/datasets (about 440 MB)
 python -m app.ml.training.train          # reads ../dc-ml/datasets/nab, writes app/ml/artifacts/
 ```
 
